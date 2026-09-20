@@ -1,0 +1,128 @@
+
+CONFIGURATION
+=============
+seed: 42
+reference: AbsTol=1e-15 RelTol=1e-09 MaxDepth=24 MaxSumError=1e-06
+per-action thresholds: MinWins=100 MaxRelCIHalfWidth=0.10 ZeroWinAlpha=0.05 MaxRefDisagreement=0.15 MinReferenceProb=1e-12
+rankability gates: MinESS=200 MinESS/N=0.10 MaxWeight=50 MaxLowPrecisionFrac=0.020 MaxMCZeroWinsFrac=0.010 MaxUnusableFrac=0.050 MaxSensitivity=0.020
+
+BANDIT LOG: synthetic 0.8/0.6/0.4/0.2, 300 decisions, seed 42
+=============================================================
+known exact uniform-policy value: 0.5000
+known exact best-arm value:       0.8000
+logging-policy arm counts: a=232 b=32 c=30 d=6
+
+RECONSTRUCTING LOGGING PROPENSITIES
+===================================
+  numerical-reference      ...   mc-20k                   ...   mc-200k                  ...   mc-1M                    ... 
+total reconstruction time 1m46.32s
+  numerical-reference      eligible=300    usable=300    minP=0.008681     statuses={RELIABLE=300}
+  mc-20k                   eligible=300    usable=296    minP=0.024050     statuses={LOW_PRECISION=4 RELIABLE=296}
+  mc-200k                  eligible=300    usable=300    minP=0.008940     statuses={RELIABLE=300}
+  mc-1M                    eligible=300    usable=300    minP=0.008674     statuses={RELIABLE=300}
+
+INDEPENDENT THOMPSON CALIBRATION
+================================
+weights are pi_numerical-reference(a) / pi_monte-carlo(a) on the logged action.
+identical-estimator self-evaluation is reported last and is IMPLEMENTATION_SANITY_ONLY.
+(computed over the first 150 decisions)
+
+draws    n          mean w   median w      min w      max w   p95|w-1|  skipped
+20k      150      0.998088   1.000673   0.916643   1.020866   0.024283        0
+200k     150      0.999601   0.999447   0.960554   1.011394   0.006478        0
+1M       150      0.999976   0.999577   0.994744   1.012038   0.003341        0
+
+reversed direction (pi_monte-carlo / pi_numerical-reference):
+draws    n          mean w   median w      min w      max w   p95|w-1|  skipped
+20k      150      1.002057   0.999302   0.979560   1.090938   0.024888        0
+200k     150      1.000418   1.000547   0.988735   1.041066   0.006436        0
+1M       150      1.000028   1.000417   0.988105   1.005284   0.003330        0
+
+IMPLEMENTATION_SANITY_ONLY: numerator=monte-carlo denominator=monte-carlo(identical draws and seed) n=150 min w=1.000000 max w=1.000000
+  -> weights are 1 by construction. This checks row joining, not propensities.
+
+IMPORTANCE-WEIGHT SENSITIVITY
+=============================
+
+candidate uniform-v1, denominator error at 20k draws:
+reference p band          n mean rel w err  p95 rel w err  max rel w err     max true w MC zeros
+p >= 0.1                139       0.005835       0.020866       0.031947       2.293103        0
+0.01 <= p < 0.1          11       0.019911       0.027446       0.083357      22.264034        0
+1e-3 <= p < 0.01          0              0              0              0              0        0
+1e-4 <= p < 1e-3          0              0              0              0              0        0
+1e-5 <= p < 1e-4          0              0              0              0              0        0
+p < 1e-5                  0              0              0              0              0        0
+
+candidate greedy-posterior-mean-v1, denominator error at 20k draws:
+reference p band          n mean rel w err  p95 rel w err  max rel w err     max true w MC zeros
+p >= 0.1                139       0.005835       0.020866       0.031947       3.015839        0
+0.01 <= p < 0.1          11       0.019911       0.027446       0.083357              0        0
+1e-3 <= p < 0.01          0              0              0              0              0        0
+1e-4 <= p < 1e-3          0              0              0              0              0        0
+1e-5 <= p < 1e-4          0              0              0              0              0        0
+p < 1e-5                  0              0              0              0              0        0
+
+CANDIDATE DIAGNOSTICS AND RANKABILITY
+=====================================
+cells marked SANITY share an estimator between numerator and denominator:
+their weights are 1 by construction, so they reproduce the empirical logging
+mean whatever the propensity error is. They are excluded from gating and ranking.
+
+--- uniform-v1 ---
+propensity source            IPS     SNIPS       ESS     ESS/N      maxW    usable   zeroWin   lowPrec  note
+numerical-reference       0.4732    0.4779      30.3    0.1010     28.80       300         0         0  
+mc-20k                    0.3801    0.5698      83.0    0.2805     10.40       296         0         4  
+mc-200k                   0.4708    0.4792      31.1    0.1036     27.96       300         0         0  
+mc-1M                     0.4737    0.4773      30.2    0.1007     28.82       300         0         0  
+gate denominator "numerical-reference" bootstrap: SE 0.0998  95% CI [0.3265, 0.6967]
+propensity sensitivity (SNIPS spread over [numerical-reference mc-20k mc-200k mc-1M]): 0.092443
+gate denominator: numerical-reference
+status: NOT_RANKABLE   support/precision: POOR_SUPPORT_AND_PROPENSITY_UNCERTAIN
+  gate failed: ESS 30.3 < MinESS 200.0
+  gate failed: propensity sensitivity 0.0924 > 0.0200 (value moves when the denominator estimator changes)
+remedy: both overlap and propensity precision are inadequate; they are independent failures and must be fixed separately
+
+--- greedy-posterior-mean-v1 ---
+propensity source            IPS     SNIPS       ESS     ESS/N      maxW    usable   zeroWin   lowPrec  note
+numerical-reference       0.7654    0.7673     210.7    0.7023      3.02       300         0         0  
+mc-20k                    0.7769    0.7674     210.4    0.7107      3.03       296         0         4  
+mc-200k                   0.7652    0.7673     210.8    0.7025      3.02       300         0         0  
+mc-1M                     0.7652    0.7673     210.7    0.7023      3.01       300         0         0  
+gate denominator "numerical-reference" bootstrap: SE 0.0438  95% CI [0.6668, 0.8538]
+propensity sensitivity (SNIPS spread over [numerical-reference mc-20k mc-200k mc-1M]): 0.000038
+gate denominator: numerical-reference
+status: RANKABLE   support/precision: GOOD_SUPPORT_GOOD_PRECISION
+remedy: no remedy required
+
+--- thompson-numerical-reference-v1 ---
+propensity source            IPS     SNIPS       ESS     ESS/N      maxW    usable   zeroWin   lowPrec  note
+numerical-reference       0.7167    0.7167     300.0    1.0000      1.00       300         0         0  SANITY
+mc-20k                    0.7227    0.7234     296.0    0.9999      1.02       296         0         4  
+mc-200k                   0.7166    0.7168     300.0    1.0000      1.01       300         0         0  
+mc-1M                     0.7166    0.7166     300.0    1.0000      1.02       300         0         0  
+gate denominator "mc-20k" bootstrap: SE 0.0253  95% CI [0.6688, 0.7700]
+propensity sensitivity (SNIPS spread over [mc-20k mc-200k mc-1M]): 0.006807
+gate denominator: mc-20k
+status: RANKABLE   support/precision: GOOD_SUPPORT_GOOD_PRECISION
+remedy: no remedy required
+
+--- exact-thompson-v1 ---
+propensity source            IPS     SNIPS       ESS     ESS/N      maxW    usable   zeroWin   lowPrec  note
+numerical-reference       0.7171    0.7160     300.0    0.9999      1.09       300         0         0  
+mc-20k                    0.7230    0.7230     296.0    1.0000      1.00       296         0         4  SANITY
+mc-200k                   0.7170    0.7161     300.0    0.9999      1.08       300         0         0  
+mc-1M                     0.7170    0.7159     300.0    0.9999      1.10       300         0         0  
+gate denominator "numerical-reference" bootstrap: SE 0.0280  95% CI [0.6576, 0.7676]
+propensity sensitivity (SNIPS spread over [numerical-reference mc-200k mc-1M]): 0.000201
+gate denominator: numerical-reference
+status: RANKABLE   support/precision: GOOD_SUPPORT_GOOD_PRECISION
+remedy: no remedy required
+
+RANKING
+=======
+1. greedy-posterior-mean-v1  SNIPS=0.7673  ESS=210.7
+2. thompson-numerical-reference-v1  SNIPS=0.7234  ESS=296.0
+3. exact-thompson-v1  SNIPS=0.7160  ESS=300.0
+note: uniform-v1: NOT_RANKABLE (POOR_SUPPORT_AND_PROPENSITY_UNCERTAIN) - excluded from ranking; ESS 30.3 < MinESS 200.0; propensity sensitivity 0.0924 > 0.0200 (value moves when the denominator estimator changes)
+winner: greedy-posterior-mean-v1
+loser:  exact-thompson-v1
