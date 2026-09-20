@@ -1,0 +1,6 @@
+apiVersion: v2
+name: router
+description: Thompson Sampling Go router (V0) — single-replica inference path with durable evidence
+version: 0.1.0
+appVersion: "0.1.0"
+keywords: [thompson-sampling, bandit, llm, routing]
