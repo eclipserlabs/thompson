@@ -1,0 +1,160 @@
+
+CONFIGURATION
+=============
+seed: 42
+reference: AbsTol=1e-15 RelTol=1e-09 MaxDepth=24 MaxSumError=1e-06
+per-action thresholds: MinWins=100 MaxRelCIHalfWidth=0.10 ZeroWinAlpha=0.05 MaxRefDisagreement=0.15 MinReferenceProb=1e-12
+rankability gates: MinESS=200 MinESS/N=0.10 MaxWeight=50 MaxLowPrecisionFrac=0.020 MaxMCZeroWinsFrac=0.010 MaxUnusableFrac=0.050 MaxSensitivity=0.020
+
+POSTERIOR TEST MATRIX (132 states, draws [2000 20000 200000 1000000])
+=====================================================================
+compared 528 state x draw-count combinations in 2m58.718s
+
+reference health over 132 states: 0 failures, 0 non-converged
+worst pre-normalization sum residual: -7.76e-07 (highly-asymmetric/K=16)
+
+draws          arms   mean abs err    max abs err     median rel    max rel err
+2k              976       0.003167       0.033676       0.075700       3.234972
+20k             976       0.001001       0.007027       0.023812       1.752741
+200k            976       0.000328       0.002527       0.007992       1.000000
+1M              976       0.000149       0.001088       0.003528       1.839542
+
+worst 20 absolute Monte-Carlo errors at 2k draws:
+state                              arm         reference    estimated      abs err      rel err     wins status        
+harness/K=4/@1                     arm03        0.308824     0.342500     0.033676     0.109048      685 RELIABLE      
+harness/K=16/@39                   arm03        0.207322     0.236000     0.028678     0.138328      472 RELIABLE      
+harness/K=4/@2                     arm03        0.287582     0.309000     0.021418     0.074477      618 RELIABLE      
+harness/K=4/@3                     arm03        0.301342     0.322000     0.020658     0.068555      644 RELIABLE      
+near-tied-moderate/K=4             arm02        0.270307     0.290500     0.020193     0.074705      581 RELIABLE      
+near-tied-moderate/K=8             arm05        0.157178     0.176500     0.019322     0.122927      353 RELIABLE      
+harness/K=8/@57                    arm02        0.228174     0.209000     0.019174     0.084034      418 RELIABLE      
+harness/K=16/@39                   arm05        0.207322     0.189000     0.018322     0.088373      378 RELIABLE      
+harness/K=4/@1                     arm01        0.308824     0.291000     0.017824     0.057714      582 RELIABLE      
+harness/K=16/@9                    arm07        0.067933     0.085500     0.017567     0.258598      171 RELIABLE      
+warm-start-beta(4,1)/K=4           arm03        0.250000     0.267500     0.017500     0.070000      535 RELIABLE      
+harness/K=4/@0                     arm03        0.250000     0.267500     0.017500     0.070000      535 RELIABLE      
+harness/K=16/@6                    arm07        0.071528     0.089000     0.017472     0.244262      178 RELIABLE      
+highly-asymmetric/K=16             arm11        0.151833     0.169000     0.017167     0.113068      338 RELIABLE      
+harness/K=4/@0                     arm02        0.250000     0.233000     0.017000     0.068000      466 RELIABLE      
+warm-start-beta(4,1)/K=4           arm02        0.250000     0.233000     0.017000     0.068000      466 RELIABLE      
+all-beta(1,1)/K=8                  arm07        0.125000     0.142000     0.017000     0.136000      284 RELIABLE      
+near-tied-moderate/K=4             arm03        0.325918     0.309000     0.016918     0.051910      618 RELIABLE      
+harness/K=4/@9                     arm00        0.757839     0.774500     0.016661     0.021985     1549 RELIABLE      
+harness/K=8/@6                     arm06        0.156472     0.172500     0.016028     0.102432      345 RELIABLE      
+
+worst 20 absolute Monte-Carlo errors at 20k draws:
+state                              arm         reference    estimated      abs err      rel err     wins status        
+late-stage-concentrated/K=4        arm02        0.250573     0.257600     0.007027     0.028046     5152 RELIABLE      
+all-beta(1,1)/K=4                  arm00        0.250000     0.243250     0.006750     0.027000     4865 RELIABLE      
+late-stage-concentrated/K=4        arm03        0.659888     0.653150     0.006738     0.010211    13063 RELIABLE      
+harness/K=8/@13                    arm07        0.176497     0.169900     0.006597     0.037378     3398 RELIABLE      
+harness/K=4/@13                    arm00        0.669299     0.662750     0.006549     0.009785    13255 RELIABLE      
+harness/K=16/@120                  arm01        0.371053     0.377550     0.006497     0.017509     7551 RELIABLE      
+harness/K=4/@27                    arm00        0.605529     0.599100     0.006429     0.010618    11982 RELIABLE      
+highly-asymmetric/K=4              arm01        0.242421     0.236550     0.005871     0.024220     4731 RELIABLE      
+highly-asymmetric/K=4              arm03        0.757579     0.763450     0.005871     0.007750    15269 RELIABLE      
+harness/K=8/@2                     arm04        0.147059     0.152750     0.005691     0.038700     3055 RELIABLE      
+highly-asymmetric/K=16             arm03        0.151833     0.146250     0.005583     0.036768     2925 RELIABLE      
+harness/K=4/@27                    arm01        0.236137     0.241700     0.005563     0.023560     4834 RELIABLE      
+harness/K=4/@19                    arm02        0.133837     0.139400     0.005563     0.041565     2788 RELIABLE      
+all-beta(1,1)/K=8                  arm03        0.125000     0.130450     0.005450     0.043600     2609 RELIABLE      
+harness/K=8/@2                     arm01        0.117647     0.112450     0.005197     0.044175     2249 RELIABLE      
+harness/K=8/@4                     arm05        0.166667     0.171600     0.004933     0.029600     3432 RELIABLE      
+harness/K=16/@173                  arm01        0.416561     0.411650     0.004911     0.011790     8233 RELIABLE      
+harness/K=16/@6                    arm07        0.071528     0.076300     0.004772     0.066710     1526 RELIABLE      
+harness/K=8/@83                    arm05        0.081342     0.086050     0.004708     0.057878     1721 RELIABLE      
+harness/K=8/@4                     arm06        0.138889     0.134200     0.004689     0.033760     2684 RELIABLE      
+
+worst 20 absolute Monte-Carlo errors at 200k draws:
+state                              arm         reference    estimated      abs err      rel err     wins status        
+harness/K=16/@120                  arm01        0.371053     0.373580     0.002527     0.006810    74716 RELIABLE      
+harness/K=2/@1                     arm01        0.444444     0.446735     0.002291     0.005154    89347 RELIABLE      
+harness/K=2/@1                     arm00        0.555556     0.553265     0.002291     0.004123   110653 RELIABLE      
+near-tied-moderate/K=16            arm11        0.088166     0.090250     0.002084     0.023639    18050 RELIABLE      
+late-stage-concentrated/K=4        arm02        0.250573     0.252415     0.001842     0.007353    50483 RELIABLE      
+harness/K=16/@57                   arm01        0.611111     0.612925     0.001814     0.002968   122585 RELIABLE      
+harness/K=16/@39                   arm01        0.310982     0.312680     0.001698     0.005459    62536 RELIABLE      
+harness/K=8/@9                     arm06        0.178590     0.176920     0.001670     0.009352    35384 RELIABLE      
+harness/K=16/@1096                 arm01        0.488009     0.489645     0.001636     0.003353    97929 RELIABLE      
+harness/K=4/@4                     arm00        0.479876     0.478295     0.001581     0.003295    95659 RELIABLE      
+harness/K=2/@3                     arm00        0.878788     0.880340     0.001552     0.001766   176068 RELIABLE      
+harness/K=2/@3                     arm01        0.121212     0.119660     0.001552     0.012805    23932 RELIABLE      
+highly-asymmetric/K=8              arm03        0.345089     0.343565     0.001524     0.004415    68713 RELIABLE      
+harness/K=8/@57                    arm04        0.325753     0.324240     0.001513     0.004644    64848 RELIABLE      
+harness/K=2/@4                     arm01        0.090909     0.089415     0.001494     0.016435    17883 RELIABLE      
+harness/K=2/@4                     arm00        0.909091     0.910585     0.001494     0.001643   182117 RELIABLE      
+harness/K=8/@0                     arm02        0.125000     0.126470     0.001470     0.011760    25294 RELIABLE      
+warm-start-beta(4,1)/K=8           arm02        0.125000     0.126470     0.001470     0.011760    25294 RELIABLE      
+harness/K=8/@0                     arm03        0.125000     0.123555     0.001445     0.011560    24711 RELIABLE      
+warm-start-beta(4,1)/K=8           arm03        0.125000     0.123555     0.001445     0.011560    24711 RELIABLE      
+
+relative error for rare actions, by reference-probability band:
+ref p <      draws             n  zero wins   mean rel err median rel err    max rel err
+0.010000     2k              329         87       0.563113       0.423060       3.234972
+0.010000     20k             329         43       0.283895       0.143432       1.752741
+0.010000     200k            329         37       0.165589       0.040103       1.000000
+0.010000     1M              329         36       0.138407       0.017682       1.839542
+0.001000     2k              121         78       0.945329       1.000000       3.234972
+0.001000     20k             121         43       0.582180       0.452216       1.752741
+0.001000     200k            121         37       0.389460       0.146688       1.000000
+0.001000     1M              121         36       0.347739       0.063049       1.839542
+0.000100     2k               46         46       1.000000       1.000000       1.000000
+0.000100     20k              46         40       0.991272       1.000000       1.752741
+0.000100     200k             46         37       0.857146       1.000000       1.000000
+0.000100     1M               46         36       0.840924       1.000000       1.839542
+1.000e-05    2k               37         37       1.000000       1.000000       1.000000
+1.000e-05    20k              37         37       1.000000       1.000000       1.000000
+1.000e-05    200k             37         37       1.000000       1.000000       1.000000
+1.000e-05    1M               37         36       1.022690       1.000000       1.839542
+
+MC_ZERO_WINS actions whose numerical reference is positive AND above the
+numerical resolution floor (1e-12): 75
+(each is an action the estimator reports as impossible and the reference reports
+ as reachable; believing the estimate would turn it into false zero support)
+state                              arm      draws         reference p one-sided 95% UB
+harness/K=8/@251                   arm07    2k               0.002143         0.001500
+harness/K=4/@173                   arm03    2k               0.002039         0.001500
+harness/K=16/@3311                 arm06    2k               0.001509         0.001500
+harness/K=16/@4785                 arm09    2k               0.001304         0.001500
+one-moderately-dominant/K=16       arm11    2k               0.001288         0.001500
+harness/K=8/@758                   arm07    2k               0.001252         0.001500
+harness/K=16/@39                   arm13    2k               0.001186         0.001500
+harness/K=16/@39                   arm04    2k               0.001186         0.001500
+harness/K=16/@3311                 arm09    2k               0.001055         0.001500
+harness/K=8/@2290                  arm05    2k               0.000815         0.001500
+harness/K=4/@6917                  arm01    2k               0.000696         0.001500
+harness/K=8/@4785                  arm02    2k               0.000676         0.001500
+harness/K=16/@1584                 arm09    2k               0.000673         0.001500
+harness/K=4/@2290                  arm03    2k               0.000538         0.001500
+harness/K=16/@2290                 arm09    2k               0.000509         0.001500
+harness/K=8/@6917                  arm03    2k               0.000508         0.001500
+harness/K=4/@1584                  arm03    2k               0.000475         0.001500
+harness/K=8/@6917                  arm06    2k               0.000353         0.001500
+harness/K=8/@3311                  arm05    2k               0.000339         0.001500
+harness/K=8/@6917                  arm05    2k               0.000336         0.001500
+harness/K=8/@4785                  arm05    2k               0.000316         0.001500
+harness/K=8/@4785                  arm03    2k               0.000310         0.001500
+harness/K=16/@1096                 arm15    2k               0.000278         0.001500
+late-stage-concentrated/K=16       arm10    2k               0.000258         0.001500
+harness-after-10000-decisions/K=4  b        2k               0.000244         0.001500
+harness/K=16/@6917                 arm10    2k               0.000243         0.001500
+late-stage-concentrated/K=8        arm02    2k               0.000236         0.001500
+harness/K=4/@2290                  arm02    2k               0.000214         0.001500
+harness/K=16/@6917                 arm05    2k               0.000210         0.001500
+harness/K=16/@3311                 arm12    2k               0.000208         0.001500
+harness/K=4/@3311                  arm03    2k               0.000185         0.001500
+harness/K=4/@1584                  arm02    2k               0.000185         0.001500
+harness/K=16/@6917                 arm14    2k               0.000172         0.001500
+harness/K=16/@6917                 arm13    2k               0.000172         0.001500
+harness-after-10000-decisions/K=4  c        2k               0.000164         0.001500
+harness/K=16/@1584                 arm12    2k               0.000146         0.001500
+harness/K=16/@1584                 arm15    2k               0.000145         0.001500
+harness/K=16/@4785                 arm13    20k              0.000131         0.000150
+harness/K=16/@4785                 arm13    2k               0.000131         0.001500
+harness/K=16/@2290                 arm12    2k               0.000125         0.001500
+... 35 more
+
+a further 128 zero-win actions have a reference below the resolution floor:
+there the integral itself underflowed, so neither estimator resolves the action
+and the row is refused as LOW_PRECISION rather than believed in either direction.
+
