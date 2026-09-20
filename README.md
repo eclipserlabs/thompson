@@ -1,179 +1,259 @@
-# Thompson Sampling
+# Thompson Sampling for provider routing
 
-A Beta-Bernoulli multi-armed bandit for **provider selection** — choosing which
-model or service handles each request — in Rust and Go, with a simulation
-harness that measures what the usual production shortcuts actually cost.
+[![Rust 1.75+](https://img.shields.io/badge/Rust-1.75%2B-dea584?logo=rust)](https://www.rust-lang.org/)
+[![Go 1.22+](https://img.shields.io/badge/Go-1.22%2B-00ADD8?logo=go)](https://go.dev/)
+[![Protocol v1](https://img.shields.io/badge/wire%20protocol-v1-5b5bd6)](protocol/SPEC.md)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE-MIT)
 
-Thompson Sampling itself is from 1933. What is not standard, and what this
-repository is actually about, is everything that goes wrong when you point it at
-a fleet of LLM providers: the arm set changes underneath you, rewards are
-multi-objective rather than binary, and the Beta draw at the centre of the
-algorithm is expensive enough that people quietly replace it with something
-cheaper.
+A research and engineering workspace for **Beta–Bernoulli Thompson Sampling**
+for provider and model selection. It includes a Rust policy library and
+simulator, a Rust snapshot control plane, and a Go HTTP gateway with durable
+evidence and offline-policy-evaluation tools.
 
-```
-crates/thompson-sampling/   Rust library (policy, reward, sampler, persistence, OTEL)
-crates/thompson-sim/        regret + throughput harness
-crates/control-plane/       snapshot registry + axum HTTP service (RwLock, auth)
-go/thompson/                Go port, single-mutex policy
-go/gateway/                 thin-waist HTTP middleware (auth, rate-limit, breaker)
-helm/traverse/              production Helm chart (probes, HPA, PDB, NetPol)
-docs/FINDINGS.md            what the harness found
-docs/results.csv            full results, 50 seeds per cell
-protocol/SPEC.md            wire types + conformance
-```
+~~~text
+select provider -> execute request -> record outcome
+~~~
 
-## The question
+Selection does not mutate policy state. Learning occurs only after a completed
+outcome is recorded, so cancelled or failed-to-dispatch requests are not learned
+as observations.
 
-Sampling from `Beta(α, β)` needs two Gamma variates. That is a few hundred
-nanoseconds, and on a hot routing path somebody eventually replaces it with the
-posterior mean plus a bit of noise. The substitution is easy to justify, hard to
-review, and the resulting policy still *looks* like it is working: it prefers
-good arms, its numbers move in the right direction, and nothing crashes.
+> **Deployment status:** the Go gateway is single-process and single-replica.
+> Its policy is in memory and not shared across replicas; its default Helm chart
+> stores evidence on an emptyDir volume. It is a controlled V0 integration path,
+> not a horizontally scalable production router.
 
-So this library treats the Beta draw as a pluggable strategy, ships an exact
-reference implementation alongside faithful reproductions of the approximations
-found in deployed routers, and measures them against each other.
+## Repository map
 
-```rust
+| Path | Purpose |
+| --- | --- |
+| crates/thompson-sampling | Rust policy: posteriors, rewards, selection, warm starts, persistence, and optional OpenTelemetry. |
+| crates/thompson-sim | Deterministic benchmark harness for regret, drift, churn, and sampler comparisons. |
+| crates/control-plane | Axum service exposing policy snapshots and Prometheus-style metrics. |
+| go/thompson | Go policy implementation and snapshot format. |
+| go/gateway | HTTP router, provider adapters, evidence ledger, shadowing, replay, and OPE gates. |
+| go/cmd | Evidence analysis, IPS/SNIPS evaluation, and propensity validation. |
+| protocol | Frozen v1 wire contract and JSON schema. |
+| docs | Benchmark findings, results, and propensity-validation report. |
+| helm | Experimental Go router and separate control-plane charts. |
+
+## Prerequisites and verification
+
+- Rust **1.75+** (workspace MSRV)
+- Go **1.22+** for the Go port and gateway
+- Docker and Helm only to build images or render charts
+
+~~~sh
+cargo test --workspace
+(cd go && go test -race ./...)
+~~~
+
+The race check is required because Go policy and gateway instances serve
+concurrent HTTP handlers.
+
+## Rust policy quick start
+
+The caller owns request execution and must report the real result after routing.
+
+~~~rust
+use rand::{rngs::SmallRng, SeedableRng};
 use thompson_sampling::{Outcome, ThompsonSampling};
 
+let mut rng = SmallRng::seed_from_u64(42);
 let mut policy = ThompsonSampling::with_defaults([
     "openai/gpt-4",
     "anthropic/claude-3-5-sonnet",
 ]);
 
-let provider = policy.select(&mut rng)?;
+let provider = policy.select(&mut rng).expect("policy has eligible arms");
+
+// Dispatch to provider, then record what actually happened.
 let outcome = Outcome::new(320.0, true, 0.0012).with_quality(0.87);
-policy.record_outcome(&mut rng, &provider, &outcome)?;
+policy
+    .record_outcome(&mut rng, &provider, &outcome)
+    .expect("selected arm is still registered");
+~~~
 
-// A new model ships. It inherits a prior from its closest relative
-// rather than restarting from a blank slate.
-policy.add_arm("openai/gpt-4.5-turbo".to_string());
-```
+Outcome carries latency, success, cache hit, cost, and optional quality.
+RewardPolicy converts that multi-objective result into the signal used to update
+the Beta posterior. Do not record before a provider is reached, or invent a cost
+when it is unknown.
 
-```go
-policy := thompson.NewDefault("openai/gpt-4", "anthropic/claude-3-5-sonnet")
+Key extension points:
 
-provider, err := policy.Select(rng)
-outcome := thompson.NewOutcome(320, true, 0.0012).WithQuality(0.87)
-err = policy.RecordOutcome(rng, provider, outcome)
-```
+- WarmStart: initialise a related new arm from an informed prior.
+- DiscountPolicy: discount old evidence when performance drifts.
+- PartitionedPolicy / LinearPolicy: contextual routing.
+- FileStore / MemoryStore: snapshot persistence.
 
-**Thin waist (2 calls) + durability + observability**
+The default sampler is the exact Gamma-based Beta sampler. Approximate samplers
+are comparison baselines, not automatic performance optimizations.
 
-```rust
-// Durability: FileStore or MemoryStore via SnapshotStore
-policy.save_to_store(&store)?;
-let restored = ThompsonSampling::restore_from_store(&store, Box::new(Exact))?;
+## Simulation and findings
 
-// Observability: attach once, hot-path cheap when None
-policy.set_observer(Box::new(OtelObserver::new("router")));
-// With --features otel emits real spans via opentelemetry::global::tracer
-```
+The harness uses synthetic environments with known rewards. Its regret figures
+are reproducible engineering measurements, not production outcomes.
 
-```go
-// Go: single mutex, safe under -race
-policy.SetObserver(thompson.NewOtelObserver("router"))
-policy.SaveToStore(store)
-```
+~~~sh
+# Discover scenarios and treatment groups.
+cargo run -p thompson-sim -- --list
 
-## What the harness found
+# Focused run.
+cargo run --release -p thompson-sim -- --group sampler --scenario hard --seeds 20
 
-50 seeds per cell, cumulative regret, lower is better. Full tables in
-[`docs/FINDINGS.md`](docs/FINDINGS.md).
+# Larger repeatable experiment.
+cargo run --release -p thompson-sim -- --seeds 50 --csv docs/results.csv
+~~~
 
-**Approximations win on the benchmark you would naturally write, and lose on
-the ones that resemble production.**
+Read [docs/FINDINGS.md](docs/FINDINGS.md) for interpretation and
+[docs/results.csv](docs/results.csv) for the recorded table. The important
+finding is that shortcuts can look good in easy stationary tests while degrading
+under churn and drift.
 
-| sampler | easy | hard | drift | churn | ns/select |
-|---|---|---|---|---|---|
-| exact | 7.9 | **159.7** | 1330 | **28.2** | 490 |
-| mean + gaussian | 10.4 | 171.4 | 1715 | 30.1 | 227 |
-| mean + uniform | **2.5** | 383.4 | 3055 | 397.9 | 114 |
-| concentration-switched | **2.5** | 250.8 | 3415 | 539.2 | 172 |
-| deterministic | 179.0 | 493.2 | 3811 | 1462.7 | 115 |
+## Snapshot control plane
 
-**The reward-to-posterior step can dominate everything else.** `binarize @ 0.6` 1289.3 vs `bernoulli` 8.1 vs `fractional` 6.9.
+The Rust control plane starts with in-memory storage; choose file storage when
+local persistence is needed.
 
-**Warm-start mostly compensates for a broken sampler.** Under exact, cold `Beta(1,1)` already explores; family similarity 0.2 transfer is 9× under approximate.
-
-**Discounting is worth 5.9× on drift** (`discount 0.999` when best/worst swap).
-
-## Production hardening (2026)
-
-**Control-plane** `crates/control-plane/src/lib.rs:12` `server.rs:14` `storage.rs:1`
-- `Registry` is `RwLock<BTreeMap>` with poison recovery (`into_inner`), not `Mutex::unwrap` — panic in observer no longer blackholes router. `RwLock` allows concurrent dashboard reads.
-- Real `axum 0.7` `Router::new().route("/snapshots", get(list)).route("/snapshots/:key", get(get_one)).route("/health", get(health)).route("/metrics", get(metrics))` with `CONTROL_PLANE_TOKEN` global or `CONTROL_PLANE_TOKENS=tenant:token,...` per-tenant Bearer auth (`subtle::ConstantTimeEq` `server.rs:19` `is_authorized`/`authorized_tenant`), `/health`+`/metrics` unauthenticated, `/snapshots*` scoped (tenant `t1:tok1` only sees `t1`). Previously `axum_stub` TODO.
-- `RegistryStorage`: `Memory` (default, thin, no deps) or `FileStorage` (per-tenant `<dir>/<tenant>.json` via `FileStore` atomic write+fsync), plus `S3`/`Postgres` behind `features=["s3"]`/`["postgres"]` `Cargo.toml:12` (`aws-sdk-s3`/`sqlx` optional, thin default). Binary `src/main.rs:1` reads `PORT`/`STORAGE`/`STORAGE_DIR`/`S3_BUCKET`, background `Persister` flush every 30s with `TraceLayer`, graceful shutdown.
-- Persistence `src/persistence.rs:24` `MemoryStore` stores `Snapshot` directly (no JSON double-serialize, no ULP drift), `FileStore` uses pid-suffixed tmp `tmp.<pid>` + `sync_all` + `10MiB` guard + `dir.sync_all`.
-
-**Core library** `crates/thompson-sampling/src/*`
-- `policy.rs:239` observer now receives actual sampled scores (`argmax_sampled_with_scores`/`argmax_ucb_with_scores`), not mean proxy; `Phased` forced uses mean only for deterministic branch. Go `policy.go:251` same with `argmaxSampledWithScoresLocked`.
-- `linear.rs:36` `LinearConfig{posterior_weight, learning_rate}` replaces hardcoded `0.7/0.3/0.05` (`adjusted_mean:85` `base*w + ctx*(1-w)`, `update_with_config`), `Serialize/Deserialize`, dim-mismatch truncates gracefully.
-- `context.rs:44` `PartitionedPolicy` tracks `global_arms` so future partitions inherit all arms; `add_arm` dedup, `remove_arm` purges global + partitions; added `select_with_linear`/`record_with_linear` + `remove_arm`.
-- `otel.rs:1` feature-gated `otel = ["dep:opentelemetry"]` (`Cargo.toml:18` `features=["trace"]`); without feature `eprintln!`, with `--features otel` real `tracer.start("thompson.select").add_event`. Zero-dep default via `observer.rs:28` `NoopObserver` preserved.
-- `health.rs:71` `is_some_and`, `linear.rs:13` missing_docs fixed for `clippy -D warnings`.
-
-**Go port** `go/thompson/*` `go/gateway/*`
-- `gateway/auth.go:13` `BearerAuth` constant-time `subtle.ConstantTimeCompare` + prefix check, `PerTenantBuckets:72`/`PerTenantBreaker:137` bounded `maxTenants 10000` with **LRU + TTL 1h eviction** (was arbitrary first-key, now oldest `lastSeen` pruned, prevents infinite `Authorization` DoS).
-- `gateway/middleware.go:25` `Middleware{Breaker,RateLimiter,AuthRequired,MaxRetries,round}` with `ResponseRecorder` status capture, retry `jitter 10ms`, health skip via `Available`, `Record` even on forward error.
-- `thompson/otel.go:1` `OtelObserver` now real `otel.Tracer("thompson-sampling").Start(ctx, "thompson.select/record")` with `attribute.String/Float64` + `log.Printf` fallback (`go.mod:6` `go.opentelemetry.io/otel v1.24.0`), previously `log.Printf` stub only. Rust `OtelObserver` parity.
-- `thompson/persistence.go:48` `FileStore` fsync + size guard, `policy.go:470` `Snapshot{Config *Config}` wire compat with Rust `Snapshot{config}`.
-
-**Helm / Docker / CI** `helm/traverse/*` `Dockerfile:7` `.github/workflows/ci.yml:17`
-- Helm: `values.yaml:1` `resources.requests`, `probes{liveness,readiness:/health}`, `service` `ClusterIP:8080` + `service.yaml`, `hpa.yaml`, `serviceaccount.yaml`, `pdb.yaml`, `secret.yaml` `CONTROL_PLANE_TOKEN`/`CONTROL_PLANE_TOKENS`, `storage` `memory|file|s3` `values.yaml:12` `s3.bucket/prefix/region`, `_helpers.tpl`/`NOTES.txt`, `networkpolicy.yaml`/`servicemonitor.yaml` (`/metrics` `ServiceMonitor`), `values.schema.json`, `Chart.yaml` keywords/maintainers, `deployment.yaml:22` `quote` `RUST_LOG`, `securityContext nonRoot/readOnlyRootFS` + `volumeMounts` for `file`.
-- Dockerfile: `lukemathwalker/cargo-chef:0.1.68-rust-1.75` `planner`→`builder` `cargo chef cook` layer cache + `distroless/cc-debian12:nonroot` `USER nonroot`, `HEALTHCHECK`, copies both `thompson-sim` + `control-plane` (was `rust:1.75` single stage, root).
-- CI: Rust `1.75` pinned (was `stable`), Go `1.22` pinned, added `Helm lint` + `TestConformance` + trace replay gate `if ls traces/*.jsonl` + `k6` `load/k6.js` `health p95<100ms` `snapshots<200ms`.
-- SaaS billing: `server.rs:169` `/metrics` exposes `traverse_billing_cost_usd` `total_pulls * BILLING_COST_PER_1K/1000` per tenant (`values.yaml:68` `billing.costPer1k`), `otel` `values.yaml:60` `otel.endpoint` → `OTEL_EXPORTER_OTLP_ENDPOINT`.
-
-
-## Design notes
-
-- **Arms live in an ordered map.** `BTreeMap` iteration is deterministic; hash map incidental randomness masked a non-exploring sampler.
-- **`select` does not mutate.** Requests can be cancelled; no learning until `record`.
-- **Go single mutex.** `Policy.mu sync.Mutex` guards `arms/order/config` — avoids lock-order inversion (`policy.go:82`); `TestConcurrentUseIsSafe -race` green.
-- **Snapshots are not bit-exact.** JSON `serde_json` shifts ~1 ULP (`policy.rs:535`); compare with `1e-9`. Rust `Snapshot` embeds `Config`, Go now `Config *Config` optional for cross replay.
-- **Contextual partitioning.** `PartitionedPolicy<C: Context>` `context.rs:44` one bandit per `partition_key()`; new `global_arms` ensures future contexts inherit. Linear contextual shares via `LinearPolicy` `0.7*mean + 0.3*ctx` (now configurable).
-
-## Running it
-
-```sh
-cargo test --workspace
-cargo test -p control-plane -- --nocapture # auth, health
-cargo run --release -p thompson-sim -- --seeds 50
-cargo run --release -p thompson-sim -- --group sampler --scenario hard --csv docs/results.csv
-cargo run --release -p thompson-sim -- --trace traces/*.jsonl
-
-# Control-plane (axum)
-PORT=8080 STORAGE=file STORAGE_DIR=/tmp/traverse cargo run -p control-plane
+~~~sh
+# Local development only: no token means snapshot routes are open.
+PORT=8080 cargo run -p control-plane
 curl http://localhost:8080/health
-CONTROL_PLANE_TOKEN=secret curl -H "Authorization: Bearer secret" http://localhost:8080/snapshots
 
-# With OTEL (real spans)
-cargo run -p thompson-sampling --features otel --example thin_waist
+# File-backed, token-protected instance.
+PORT=8080 STORAGE=file STORAGE_DIR=/var/lib/traverse \
+  CONTROL_PLANE_TOKEN='replace-with-a-secret' \
+  cargo run -p control-plane
+curl -H 'Authorization: Bearer replace-with-a-secret' \
+  http://localhost:8080/snapshots
+~~~
 
-# Go
-cd go && go test -race ./...            # includes TestConformance
-go test -run TestTraceReplay -v ./...   # when traces present
+| Endpoint | Auth | Description |
+| --- | --- | --- |
+| GET /health | No | Liveness response. |
+| GET /metrics | No | Prometheus text metrics. |
+| GET /snapshots | Required when a token is configured | Lists snapshots; tenant tokens are scoped. |
+| GET /snapshots/:tenant | Required when a token is configured | Reads one snapshot; tenant tokens may read only their own tenant. |
 
-# Helm
+Set CONTROL_PLANE_TOKENS to comma-separated tenant:token pairs for scoped
+access; CONTROL_PLANE_TOKEN is a global token. Never use the open default
+outside local development. Health and metrics stay public, so apply network
+controls if tenant names or policy metadata are sensitive.
+
+## Go gateway
+
+The gateway performs Select -> persist decision -> execute -> persist outcome
+-> Record. It exposes GET /health, GET /metrics, and sends all other
+paths—including /v1/chat/completions—to the selected provider.
+
+~~~sh
+cd go
+
+# Local smoke test: missing PROVIDER_URL_* values select FakeProvider.
+EVIDENCE_PATH=./evidence.jsonl go run ./router
+
+# Real provider configuration. Convert arm ID '/' and '-' to '_' and uppercase.
+ARMS='openai/gpt-4,anthropic/claude-3-opus' \
+PROVIDER_URL_OPENAI_GPT_4='https://provider-a.example/v1/chat/completions' \
+PROVIDER_URL_ANTHROPIC_CLAUDE_3_OPUS='https://provider-b.example/v1/messages' \
+EVIDENCE_PATH=/var/lib/router/evidence.jsonl \
+go run ./router
+~~~
+
+The fake-provider fallback is for local verification only. The binary itself
+does not configure request authentication: deploy it behind authenticated,
+authorized ingress or compose the provided middleware with application-side
+authentication. Do not expose it to untrusted clients.
+
+The evidence file is append-only and each successful event write is synced to
+the local filesystem. It supports replay and offline analysis, but it is not a
+transactional or cross-replica ledger: a crash can leave an incomplete decision.
+Use a durable volume with restrictive permissions; the current writer creates
+new files with mode 0644.
+
+### Shadow execution
+
+Shadowing runs one non-selected provider without updating the live policy. It
+is disabled by default; enable it only for requests that are safe to duplicate.
+
+~~~sh
+SHADOW_SAMPLE_RATE=0.01 \
+SHADOW_TIMEOUT=5s \
+SHADOW_MAX_CONCURRENCY=5 \
+go run ./router
+~~~
+
+Requests must include X-Shadow-Eligible: true. Set SHADOW_SAMPLE_RATE=0 as the
+kill switch. Shadow observations are paired diagnostics, not full-information
+regret data.
+
+## Evidence replay and OPE
+
+These commands read a collected ledger; they do not mutate the online policy.
+
+~~~sh
+cd go
+
+go run ./cmd/analyze --evidence ./evidence.jsonl
+go run ./cmd/evaluate \
+  --evidence ./evidence.jsonl \
+  --policy uniform-v1 \
+  --propensity reference
+go run ./cmd/propensity-audit --evidence ./evidence.jsonl
+~~~
+
+IPS/SNIPS needs support and precise logging-action propensities. The tooling
+separates overlap failures, Monte-Carlo zero-win estimates, numerical-reference
+failures, and low-precision rows. Candidates marked NOT_RANKABLE are refused
+rather than reported as winners. A candidate and logging propensity generated by
+the same estimator is IMPLEMENTATION_SANITY_ONLY, not a valid comparison.
+
+Read [docs/PROPENSITY_VALIDATION.md](docs/PROPENSITY_VALIDATION.md) before using
+an estimate to change routing policy.
+
+## Interoperability and deployment
+
+Rust and Go share this v1 snapshot shape:
+
+~~~text
+Snapshot { version: 1, config, arms, total_pulls }
+~~~
+
+JSON floats must be compared with tolerance, not bitwise equality. See
+[protocol/SPEC.md](protocol/SPEC.md) and [protocol/schema.json](protocol/schema.json)
+for types and conformance details.
+
+- Dockerfile builds Rust simulator and control-plane binaries.
+- go/Dockerfile builds the Go router.
+- helm/router renders the one-replica experimental router with ephemeral
+  evidence by default.
+- helm/traverse is the separate control-plane chart; review storage, auth,
+  image, and resources before applying it.
+
+~~~sh
+helm lint helm/router
+helm template router helm/router
 helm lint helm/traverse
-helm template traverse helm/traverse --set image.tag=0.1.0 | kubectl apply -f -
-```
+helm template traverse helm/traverse
+~~~
 
-## Scope and limits
+## Engineering checks
 
-The environments are synthetic (regret exactly computable). Rewards assume linear separable latency/success/cache/cost/quality; real latency-quality correlate.
+~~~sh
+# Rust library, simulator, control plane, and doctests.
+cargo test --workspace
 
-## References
+# Go policy, gateway, OPE, and race checks.
+(cd go && go test -race ./...)
 
-- Thompson, W. R. (1933). *Biometrika*.
-- Agrawal, S. & Goyal, N. (2012). *COLT*.
-- Marsaglia, G. & Tsang, W. W. (2000). *ACM TOMS*.
-- Chapelle, O. & Li, L. (2011). *NeurIPS*.
+# Optional Rust OpenTelemetry example.
+cargo run -p thompson-sampling --features otel --example thin_waist
+~~~
 
-## Provenance and license
+There is deliberately no CI-status badge: this checkout has no GitHub Actions
+workflow. The badges above state versioned repository facts, not build status.
 
-Extracted from an internal LLM routing stack, rewritten rather than copied.
-Dual-licensed under [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE).
+## License
+
+Dual-licensed under [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your
+option.
