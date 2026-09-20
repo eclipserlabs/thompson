@@ -1,0 +1,46 @@
+replicaCount: 1 # V0 single replica to preserve clear learning semantics; do not scale without shared state
+
+image:
+  repository: traverse/router-go
+  tag: 0.1.0
+  pullPolicy: IfNotPresent
+
+service:
+  port: 8080
+  type: ClusterIP
+
+evidence:
+  path: /data/evidence.jsonl
+
+arms: "openai/gpt-4,anthropic/claude-3-opus"
+
+shadow:
+  enabled: false
+  sampleRate: 0.0 # 0.0 disabled, 0.01, 0.05, 0.10 for experiments; hard max 1.0
+  timeout: 5s
+  maxConcurrency: 5
+  maxBodyBytes: 1048576 # 1 MiB
+  eligibleHeader: "X-Shadow-Eligible"
+
+env:
+  RUST_LOG: info
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+probes:
+  liveness:
+    path: /health
+    port: 8080
+    initialDelaySeconds: 5
+    periodSeconds: 10
+  readiness:
+    path: /health
+    port: 8080
+    initialDelaySeconds: 3
+    periodSeconds: 5
