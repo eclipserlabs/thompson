@@ -1,6 +1,8 @@
 package thompson
 
 import (
+	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -242,6 +244,89 @@ func (p *Policy) TotalPulls() uint64 {
 
 // SamplerName returns the active sampler's name.
 func (p *Policy) SamplerName() string { return p.sampler.Name() }
+
+// EligibleArmIDs returns a copy of the current sorted eligible arm IDs.
+// Deterministic iteration order; safe to call concurrently.
+func (p *Policy) EligibleArmIDs() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	out := make([]string, len(p.order))
+	copy(out, p.order)
+	return out
+}
+
+// PosteriorFor returns a copy of the posterior for the given arm, if present.
+// Used to capture immutable before/after snapshots for evidence without
+// exposing internal pointers. Caller must not mutate returned value.
+func (p *Policy) PosteriorFor(id string) (Posterior, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	a, ok := p.arms[id]
+	if !ok {
+		return Posterior{}, false
+	}
+	return a.Posterior, true
+}
+
+// ConfigSnapshot returns a copy of current Config for hashing/evidence.
+func (p *Policy) ConfigSnapshot() Config {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.config
+}
+
+// ConfigHash returns a stable hex hash of the policy config (JSON canonical).
+// Used for DecisionStarted.policy_config_hash. Errors are impossible with
+// known structs; on marshal error returns empty.
+func (p *Policy) ConfigHash() string {
+	p.mu.Lock()
+	cfg := p.config
+	p.mu.Unlock()
+	b, err := json.Marshal(cfg)
+	if err != nil {
+		return ""
+	}
+	h := sha256.Sum256(b)
+	return fmt.Sprintf("%x", h[:8]) // 16 hex chars sufficient for V0
+}
+
+// SelectWithScores atomically selects an arm and returns the actual sampled
+// scores map used for the decision. The map is newly allocated per call.
+// Scores are true Beta samples (or, when Phased forced, posterior means) —
+// never stale means. This is the evidence path for DecisionStarted.sampled_scores.
+func (p *Policy) SelectWithScores(rng *rand.Rand) (string, map[string]float64, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if len(p.arms) == 0 {
+		return "", nil, ErrNoArms
+	}
+	scores := make(map[string]float64, len(p.order))
+	var chosen string
+	switch p.config.Selection.Kind {
+	case UCBRegularized:
+		chosen, scores = p.argmaxUCBWithScoresLocked(rng, scores)
+	case PhasedSelection:
+		quota := p.config.Selection.Bootstrap
+		if p.config.Selection.MinPullsForExploit > quota {
+			quota = p.config.Selection.MinPullsForExploit
+		}
+		if id, ok := p.leastPulledBelowLocked(quota); ok {
+			chosen = id
+			for _, pid := range p.order {
+				scores[pid] = p.arms[pid].Posterior.Mean()
+			}
+		} else {
+			chosen, scores = p.argmaxSampledWithScoresLocked(rng, scores)
+		}
+	default:
+		chosen, scores = p.argmaxSampledWithScoresLocked(rng, scores)
+	}
+	if p.observer != nil {
+		// Observer sees same true scores; keep single notification point.
+		p.observer.OnSelect(chosen, scores)
+	}
+	return chosen, scores, nil
+}
 
 // Select chooses an arm.
 //
