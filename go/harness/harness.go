@@ -6,6 +6,7 @@
 package harness
 
 import (
+	"math"
 	"math/rand/v2"
 	"time"
 
@@ -298,4 +299,4 @@ func sqrtApprox(x float64) float64 {
 	return z
 }
 
-func nan() float64 { return 0.0 / 0.0 }
+func nan() float64 { return math.NaN() }
