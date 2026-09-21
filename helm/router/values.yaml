@@ -11,6 +11,14 @@ service:
 
 evidence:
   path: /data/evidence.jsonl
+  # WARNING: the Deployment mounts `emptyDir` at /data, so evidence is
+  # ephemeral and lost on reschedule. For anything beyond smoke tests, mount a
+  # PersistentVolumeClaim at /data and restrict permissions (new files are 0600).
+  # Single replica only until policy state is shared across replicas.
+  persistence:
+    enabled: false
+    size: 10Gi
+    storageClass: ""
 
 arms: "openai/gpt-4,anthropic/claude-3-opus"
 
