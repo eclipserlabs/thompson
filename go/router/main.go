@@ -4,6 +4,7 @@
 package main
 
 import (
+	"flag"
 	"log"
 	"net/http"
 	"os"
@@ -16,9 +17,26 @@ import (
 )
 
 func main() {
+	healthcheck := flag.Bool("healthcheck", false, "probe /health and exit (for Docker HEALTHCHECK)")
+	flag.Parse()
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
+	}
+	if *healthcheck {
+		client := http.Client{Timeout: 3 * time.Second}
+		resp, err := client.Get("http://localhost:" + port + "/health")
+		if err != nil {
+			log.Printf("healthcheck failed: %v", err)
+			os.Exit(1)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			log.Printf("healthcheck status: %d", resp.StatusCode)
+			os.Exit(1)
+		}
+		os.Exit(0)
 	}
 	evidencePath := os.Getenv("EVIDENCE_PATH")
 	if evidencePath == "" {
