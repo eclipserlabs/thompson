@@ -60,6 +60,9 @@ func (o *OtelObserver) OnDiscount(factor float64) {
 		attribute.Float64("factor", factor),
 	)
 	span.End()
-	// TODO: otel.Meter("thompson").Int64Counter("thompson.discounts")
+	// Intentionally log-only: an otel Meter instrument must be created once and
+	// cached on the observer (meter.Int64Counter returns an instrument + error).
+	// Constructing a counter per OnDiscount call would allocate and can fail;
+	// wire a cached counter at construction if metrics are needed.
 	log.Printf("[otel:%s] thompson.discount factor=%g", o.Service, factor)
 }
