@@ -19,7 +19,10 @@ COPY --from=builder /app/target/release/thompson-sim /usr/local/bin/thompson-sim
 COPY --from=builder /app/target/release/control-plane /usr/local/bin/control-plane
 USER nonroot:nonroot
 EXPOSE 8080
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 CMD ["/usr/local/bin/control-plane", "--help"]
+# No Docker HEALTHCHECK: distroless has no shell/curl, and probing the binary
+# with `--help` always succeeds even when the server is down. Rely on the
+# Kubernetes liveness/readiness probes in helm/traverse instead.
+HEALTHCHECK NONE
 # Default to control-plane (router); override with thompson-sim for harness
 ENTRYPOINT ["control-plane"]
 CMD ["--help"]
