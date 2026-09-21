@@ -168,9 +168,11 @@ type FileEvidenceWriter struct {
 }
 
 // NewFileEvidenceWriter opens (or creates) the JSONL file at path for append.
-// File must be writable. Caller should Close when done.
+// New files are created 0600: evidence can contain prompt-adjacent metadata and
+// must not be world-readable. Existing files keep their current mode; tighten
+// with `chmod 600` on upgrade. Caller should Close when done.
 func NewFileEvidenceWriter(path string) (*FileEvidenceWriter, error) {
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("evidence: open %s: %w", path, err)
 	}
