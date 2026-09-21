@@ -100,12 +100,13 @@ impl RegistryStorage for S3Storage {
         // Future: with `aws-sdk-s3 1` (requires rustc >=1.70, latest 1.94) do:
         //   let cfg = aws_config::load_from_env().await;
         //   Client::new(&cfg).put_object().bucket(&bucket).key(&key).body(json).send().await
-        // Keep stub to stay thin on rustc 1.75.
-        Ok(())
+        // Keep stub to stay thin on rustc 1.75. Fail loudly so callers cannot
+        // mistake the no-op for durability.
+        Err("s3 storage not implemented: enable and wire aws-sdk-s3 first".to_string())
     }
     fn load(&self, tenant: &str) -> Result<Option<Snapshot>, String> {
         let _ = self.key_for(tenant);
-        Ok(None)
+        Err("s3 storage not implemented: enable and wire aws-sdk-s3 first".to_string())
     }
 }
 
@@ -129,10 +130,17 @@ impl PostgresStorage {
 impl RegistryStorage for PostgresStorage {
     fn save_all(&self, registry: &Registry) -> Result<(), String> {
         let _ = registry.to_json();
-        Ok(())
+        // Stub only: fail loudly rather than silently discarding snapshots.
+        Err(
+            "postgres storage not implemented: wire a sqlx/tokio-postgres backend first"
+                .to_string(),
+        )
     }
     fn load(&self, _tenant: &str) -> Result<Option<Snapshot>, String> {
-        Ok(None)
+        Err(
+            "postgres storage not implemented: wire a sqlx/tokio-postgres backend first"
+                .to_string(),
+        )
     }
 }
 
