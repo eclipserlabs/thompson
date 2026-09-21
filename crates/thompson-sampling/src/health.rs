@@ -90,6 +90,12 @@ impl CircuitBreaker {
 
     /// Wrap a ThompsonSampling select to respect breaker.
     /// Returns tripped-aware choice: if best arm is tripped, picks best among available.
+    ///
+    /// Approximation, not Thompson Sampling: selection is argmax posterior mean
+    /// among untripped arms, so it does not explore like a Beta draw. Use it as
+    /// an exclusion-before-select guard (filter with [`available`](Self::available),
+    /// then `policy.select`), not as a replacement for `select`, and keep the
+    /// all-tripped bypass in mind when reasoning about blast radius.
     pub fn select_with_breaker(&self, policy: &ThompsonSampling, round: u64) -> Option<String> {
         let stats = policy.stats();
         let available: Vec<&str> = self.available(
