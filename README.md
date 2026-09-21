@@ -169,7 +169,7 @@ The evidence file is append-only and each successful event write is synced to
 the local filesystem. It supports replay and offline analysis, but it is not a
 transactional or cross-replica ledger: a crash can leave an incomplete decision.
 Use a durable volume with restrictive permissions; the current writer creates
-new files with mode 0644.
+new files with mode 0600 (tighten pre-existing files with `chmod 600`).
 
 ### Shadow execution
 
@@ -250,8 +250,9 @@ cargo test --workspace
 cargo run -p thompson-sampling --features otel --example thin_waist
 ~~~
 
-There is deliberately no CI-status badge: this checkout has no GitHub Actions
-workflow. The badges above state versioned repository facts, not build status.
+There is deliberately no CI-status badge: the badges above state versioned
+repository facts, not build status. Checks live in `.github/workflows/`
+(`ci.yml`: fmt/clippy/test; `trace-replay.yml`: regret + trace replay).
 
 ## License
 
