@@ -22,6 +22,9 @@ storage:
     region: us-east-1
 
 # Auth: single global token (CONTROL_PLANE_TOKEN) or per-tenant "t1:tok1,t2:tok2" (CONTROL_PLANE_TOKENS)
+# WARNING: empty token/token map disables auth (local dev only). /health and
+# /metrics stay public by design; put network controls in front if tenant names
+# or policy metadata are sensitive.
 auth:
   # global admin token (empty = open dev)
   token: ""
