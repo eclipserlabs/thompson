@@ -1,4 +1,4 @@
-# Thompson Sampling for provider routing
+# Thompson
 
 [![Rust 1.75+](https://img.shields.io/badge/Rust-1.75%2B-dea584?logo=rust)](https://www.rust-lang.org/)
 [![Go 1.22+](https://img.shields.io/badge/Go-1.22%2B-00ADD8?logo=go)](https://go.dev/)
