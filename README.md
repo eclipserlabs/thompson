@@ -30,24 +30,7 @@ Thompson is not a replacement for your application, your validators, or your exi
 
 ## How it works
 
-```text
-Select an execution strategy
-            |
-            v
-Persist the decision and its evidence
-            |
-            v
-Execute the selected strategy
-            |
-            v
-Receive an independently verified outcome
-            |
-            v
-Persist, settle, and learn
-            |
-            v
-Improve subsequent decisions
-```
+![How Thompson works: select, persist the decision, execute, receive a verified outcome, settle and learn, improve](docs/how-it-works.svg)
 
 A decision records the selected arm, eligible alternatives, policy identity, and the policy state used for selection.
 
@@ -191,18 +174,16 @@ The current learner optimizes accepted/rejected outcomes, not cost directly. The
 
 ## Repository
 
-| Path | Purpose |
-| --- | --- |
-| `crates/thompson-sampling` | Rust policy library |
-| `crates/thompson-sim` | Deterministic simulation |
-| `crates/control-plane` | Rust snapshot control plane |
-| `go/thompson` | Go policy and decision snapshots |
-| `go/gateway` | HTTP routing, durable decisions, verified settlement, and evidence |
-| `go/outcome` | Versioned outcomes, durable learning, and recovery |
-| `go/cmd` | Evidence analysis and evaluation utilities |
-| `protocol` | Rust/Go snapshot interoperability |
-| `docs` | Research findings, design contracts, operational documentation, and experiment specifications |
-| `helm` | Experimental deployment charts |
+- `crates/thompson-sampling` — Rust policy library
+- `crates/thompson-sim` — Deterministic simulation
+- `crates/control-plane` — Rust snapshot control plane
+- `go/thompson` — Go policy and decision snapshots
+- `go/gateway` — HTTP routing, durable decisions, verified settlement, and evidence
+- `go/outcome` — Versioned outcomes, durable learning, and recovery
+- `go/cmd` — Evidence analysis and evaluation utilities
+- `protocol` — Rust/Go snapshot interoperability
+- `docs` — Research findings, design contracts, operational documentation, and experiment specifications
+- `helm` — Experimental deployment charts
 
 ## License
 
