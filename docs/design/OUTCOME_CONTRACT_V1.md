@@ -1,6 +1,16 @@
-# Outcome Contract V1 (Design — DESIGN ONLY, no implementation)
+# Outcome Contract V1 (Design — partially implemented, see below)
 
-Status: proposal. This document defines an application-independent contract for execution strategies with multiple attempts. It does not change any code, schema, or API. Compatibility requirements with existing interfaces are listed at the end; implementation is PR 2 scope.
+Status: proposal, with a first implementation in `go/outcome` (PR 2 branch
+`feat/durable-learning-v1`; storage/migration details in
+`docs/engineering/PR2_DURABLE_LEARNING.md`). Two deviations from this text
+were adopted during implementation and are normative for V1 code: (1)
+REJECTED events require `deciding_attempt_id` like ACCEPTED (one job version
+produces at most one arm update, against the deciding attempt's arm);
+(2) the additive `DecisionStarted` fields (`selection_kind`, `sampler_id`,
+`policy_version`, `strategy_id`, `job_id`) are deferred to router wiring
+(PR 3) — `logging_policy_id` derivation itself is implemented. This document
+remains the application-independent contract; it still defines no storage
+engine and changes no sampling mathematics.
 
 ## 0. Terminology and non-goals
 

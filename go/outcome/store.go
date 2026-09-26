@@ -156,6 +156,11 @@ func NewFileOutcomeStore(path string) (*FileOutcomeStore, error) {
 }
 
 // recover replays the file into memory, truncating a torn tail.
+//
+// A Submit only reports success after write+sync of a newline-terminated
+// line, so any of these means "torn tail, discard": a line that does not
+// parse, a scanner error, or a final line missing its trailing newline
+// (even if it parses — its commit never completed).
 func (s *FileOutcomeStore) recover() error {
 	st, err := s.file.Stat()
 	if err != nil {
@@ -164,40 +169,65 @@ func (s *FileOutcomeStore) recover() error {
 	if st.Size() == 0 {
 		return nil
 	}
+	// A committed line always ends with '\n'; anything else at EOF is torn.
+	complete := true
+	if tail := make([]byte, 1); true {
+		if _, err := s.file.ReadAt(tail, st.Size()-1); err != nil {
+			return fmt.Errorf("outcome: read tail %s: %w", s.path, err)
+		}
+		complete = tail[0] == '\n'
+	}
 	if _, err := s.file.Seek(0, 0); err != nil {
 		return fmt.Errorf("outcome: seek %s: %w", s.path, err)
 	}
 	scanner := bufio.NewScanner(s.file)
 	buf := make([]byte, 0, 64*1024)
 	scanner.Buffer(buf, 10*1024*1024)
-	var offset int64
-	torn := false
+	var lineStart int64
+	tornAt := int64(-1)
 	for scanner.Scan() {
 		line := scanner.Bytes()
-		offset += int64(len(line)) + 1 // + newline
 		if len(line) == 0 {
+			lineStart += 1
 			continue
 		}
 		var ev OutcomeEvent
 		if err := json.Unmarshal(line, &ev); err != nil {
-			torn = true
+			tornAt = lineStart
 			break
 		}
 		if err := ev.Validate(); err != nil {
-			return fmt.Errorf("outcome: ledger %s holds invalid event at ~offset %d: %w", s.path, offset, err)
+			return fmt.Errorf("outcome: ledger %s holds invalid event at ~offset %d: %w", s.path, lineStart, err)
 		}
 		// Recovery replays history verbatim: Seq is reassigned in file order
 		// so a torn tail never shifts the sequence of surviving events.
 		ev.Seq = uint64(len(s.events) + 1)
 		s.events = append(s.events, ev)
 		s.latest[ev.JobID] = len(s.events) - 1
+		lineStart += int64(len(line)) + 1 // + newline
 	}
 	if err := scanner.Err(); err != nil {
 		// bufio.ErrTooLong or I/O: a torn tail, not a valid prefix break.
-		torn = true
+		tornAt = lineStart
 	}
-	if torn {
-		if err := s.file.Truncate(offset); err != nil {
+	if tornAt < 0 && !complete {
+		// Final line lacks its newline: pop it, it was never committed.
+		if n := len(s.events); n > 0 {
+			dropped := s.events[n-1]
+			s.events = s.events[:n-1]
+			if idx, ok := s.latest[dropped.JobID]; ok && idx == n-1 {
+				delete(s.latest, dropped.JobID)
+				for i, e := range s.events {
+					if e.JobID == dropped.JobID {
+						s.latest[dropped.JobID] = i
+					}
+				}
+			}
+		}
+		tornAt = lineStart
+	}
+	if tornAt >= 0 {
+		if err := s.file.Truncate(tornAt); err != nil {
 			return fmt.Errorf("outcome: truncate torn tail %s: %w", s.path, err)
 		}
 		if _, err := s.file.Seek(0, 2); err != nil {

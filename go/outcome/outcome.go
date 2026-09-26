@@ -40,11 +40,11 @@ const (
 type TransportStatus string
 
 const (
-	TransportOK             TransportStatus = "ok"
-	TransportTimeout        TransportStatus = "timeout"
-	TransportError          TransportStatus = "transport_error"
-	TransportBodyTooLarge   TransportStatus = "body_too_large"
-	TransportCancelled      TransportStatus = "cancelled"
+	TransportOK           TransportStatus = "ok"
+	TransportTimeout      TransportStatus = "timeout"
+	TransportError        TransportStatus = "transport_error"
+	TransportBodyTooLarge TransportStatus = "body_too_large"
+	TransportCancelled    TransportStatus = "cancelled"
 )
 
 // ValidationVerdict is the application validator's verdict on one attempt,
@@ -112,7 +112,7 @@ type OutcomeEvent struct {
 	// Version is the monotonically increasing outcome version for this job.
 	Version uint64 `json:"outcome_version"`
 	// Supersedes is Version-1 (0 for the first version).
-	Supersedes uint64 `json:"supersedes"`
+	Supersedes uint64    `json:"supersedes"`
 	Status     JobStatus `json:"status"`
 	Attempts   []Attempt `json:"attempts"`
 	// DecidingAttemptID names the attempt whose verification determined the
@@ -183,9 +183,9 @@ func (e OutcomeEvent) Validate() error {
 			return fmt.Errorf("outcome: attempt %q has unknown verified outcome %q", a.AttemptID, a.Verified)
 		}
 	}
-	if e.Status == StatusAccepted {
+	if e.Status == StatusAccepted || e.Status == StatusRejected {
 		if e.DecidingAttemptID == "" {
-			return fmt.Errorf("outcome: ACCEPTED requires deciding_attempt_id")
+			return fmt.Errorf("outcome: %s requires deciding_attempt_id", e.Status)
 		}
 		if !seen[e.DecidingAttemptID] {
 			return fmt.Errorf("outcome: deciding attempt %q not in attempts", e.DecidingAttemptID)

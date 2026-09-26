@@ -233,6 +233,8 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		p := snap.Posteriors[id]
 		eligibleState = append(eligibleState, EligibleArmState{ArmID: id, Alpha: p.Alpha, Beta: p.Beta, Pulls: p.Pulls})
 	}
+	// LoggingPolicyID is derived from the live configuration, never hardcoded
+	// (audit A3): only exact-Thompson passes the OPE reliability gate.
 	started := DecisionStarted{
 		SchemaVersion:           1,
 		EventType:               "DecisionStarted",
@@ -244,8 +246,6 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		PolicyConfigHash:        configHash,
 		PosteriorBefore:         snapshotFrom(postBefore),
 		EligibleArmState:        eligibleState,
-		// Derived from the live configuration, never hardcoded (audit A3):
-		// only exact-Thompson passes the OPE reliability gate.
 		LoggingPolicyID:         rt.policy.LoggingPolicyID(),
 		LoggingPolicyConfigHash: configHash,
 		ExternalRequestID:       externalID,

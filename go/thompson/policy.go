@@ -631,6 +631,42 @@ func (p *Policy) BestArm(minPulls uint64) (string, bool) {
 	return best, best != ""
 }
 
+// RestoreSnapshot replaces the policy's learned state in place from a
+// snapshot, keeping the active sampler and observer. It validates like
+// Restore and swaps arms, config and totals atomically under the policy
+// lock, so learners can re-fold history (corrections, crash recovery)
+// without handing out a new Policy or copying a mutex.
+func (p *Policy) RestoreSnapshot(snapshot Snapshot) error {
+	if snapshot.Version != SnapshotVersion {
+		return fmt.Errorf("thompson: unsupported snapshot version %d (expected %d)",
+			snapshot.Version, SnapshotVersion)
+	}
+	arms := make(map[string]*Arm, len(snapshot.Arms))
+	var order []string
+	for _, arm := range snapshot.Arms {
+		if _, err := NewPosterior(arm.Posterior.Alpha, arm.Posterior.Beta); err != nil {
+			return fmt.Errorf("thompson: arm %q: %w", arm.ID, err)
+		}
+		if _, dup := arms[arm.ID]; dup {
+			return fmt.Errorf("thompson: snapshot names arm %q twice", arm.ID)
+		}
+		clone := arm
+		arms[arm.ID] = &clone
+		order = append(order, arm.ID)
+	}
+	sort.Strings(order)
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.arms = arms
+	p.order = order
+	if snapshot.Config != nil {
+		p.config = *snapshot.Config
+	}
+	p.totalPulls = snapshot.TotalPulls
+	return nil
+}
+
 // SnapshotVersion is the current snapshot format version.
 const SnapshotVersion = 1
 
