@@ -334,14 +334,24 @@ func writeJSON(t *testing.T, path string, v any) {
 	}
 }
 
-// openTestRunner wires a Runner over real gateway binaries on dedicated ports.
-func openTestRunner(t *testing.T, manifestPath, dir string) *Runner {
+// openTestRunner wires a Runner over real gateway binaries. Ports default to
+// unique allocated bases; callers may pass an explicit (pubBase, settleBase)
+// pair (e.g. tests that assert on fixed ports). Variadic to stay compatible
+// with call sites written against either convention.
+func openTestRunner(t *testing.T, manifestPath, dir string, bases ...int) *Runner {
 	t.Helper()
 	m, err := LoadManifest(manifestPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	pubBase, settleBase := nextPortBases()
+	var pubBase, settleBase int
+	if len(bases) == 2 {
+		pubBase, settleBase = bases[0], bases[1]
+	} else if len(bases) == 0 {
+		pubBase, settleBase = nextPortBases()
+	} else {
+		t.Fatalf("openTestRunner: want 0 or 2 port bases, got %d", len(bases))
+	}
 	pubPorts := []int{pubBase, pubBase + 1, pubBase + 2}
 	settlePorts := []int{settleBase, settleBase + 1, settleBase + 2}
 	r, err := OpenRunner(RunnerConfig{
