@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="560" height="402" viewBox="0 0 560 402" role="img" aria-label="Thompson decision and learning flow">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="#59636e"/>
+    </marker>
+  </defs>
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14">
+    <rect x="130" y="16" width="300" height="40" rx="8" fill="#f6f8fa" stroke="#1f2328" stroke-width="1.5"/>
+    <text x="280" y="41" text-anchor="middle" fill="#1f2328">Select an execution strategy</text>
+    <line x1="280" y1="56" x2="280" y2="80" stroke="#59636e" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <rect x="130" y="82" width="300" height="40" rx="8" fill="#f6f8fa" stroke="#1f2328" stroke-width="1.5"/>
+    <text x="280" y="107" text-anchor="middle" fill="#1f2328">Persist the decision and its evidence</text>
+    <line x1="280" y1="122" x2="280" y2="146" stroke="#59636e" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <rect x="130" y="148" width="300" height="40" rx="8" fill="#f6f8fa" stroke="#1f2328" stroke-width="1.5"/>
+    <text x="280" y="173" text-anchor="middle" fill="#1f2328">Execute the selected strategy</text>
+    <line x1="280" y1="188" x2="280" y2="212" stroke="#59636e" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <rect x="130" y="214" width="300" height="40" rx="8" fill="#ddf4ff" stroke="#0969da" stroke-width="1.5"/>
+    <text x="280" y="239" text-anchor="middle" fill="#1f2328">Receive an independently verified outcome</text>
+    <line x1="280" y1="254" x2="280" y2="278" stroke="#59636e" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <rect x="130" y="280" width="300" height="40" rx="8" fill="#f6f8fa" stroke="#1f2328" stroke-width="1.5"/>
+    <text x="280" y="305" text-anchor="middle" fill="#1f2328">Persist, settle, and learn</text>
+    <line x1="280" y1="320" x2="280" y2="344" stroke="#59636e" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <rect x="130" y="346" width="300" height="40" rx="8" fill="#dafbe1" stroke="#1a7f37" stroke-width="1.5"/>
+    <text x="280" y="371" text-anchor="middle" fill="#1f2328">Improve subsequent decisions</text>
+  </g>
+</svg>
