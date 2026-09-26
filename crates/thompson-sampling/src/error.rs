@@ -26,6 +26,16 @@ pub enum Error {
     },
     /// A serialized snapshot could not be decoded.
     Decode(String),
+    /// A configuration parameter was not finite (or out of its valid range).
+    /// Returned instead of silently degrading selection or learning: NaN
+    /// slips through every comparison, so an unchecked NaN threshold,
+    /// coefficient, or weight poisons decisions without an error.
+    InvalidParameter {
+        /// Which parameter was invalid (e.g. "binarize.threshold").
+        parameter: String,
+        /// The offending value.
+        value: f64,
+    },
 }
 
 impl fmt::Display for Error {
@@ -41,6 +51,9 @@ impl fmt::Display for Error {
             Error::NoArms => write!(f, "no arms registered"),
             Error::UnknownArm { id } => write!(f, "unknown arm: {id}"),
             Error::Decode(msg) => write!(f, "failed to decode snapshot: {msg}"),
+            Error::InvalidParameter { parameter, value } => {
+                write!(f, "invalid configuration parameter {parameter}: {value}")
+            }
         }
     }
 }

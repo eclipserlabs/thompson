@@ -5,6 +5,7 @@
 //! This module does the collapse explicitly so the trade-off being optimised is
 //! visible and configurable rather than buried in the update path.
 
+use crate::error::{Error, Result};
 use serde::{Deserialize, Serialize};
 
 /// Observed outcome of a single request.
@@ -89,6 +90,28 @@ impl Weights {
             cost: 0.0,
             quality: 0.0,
         }
+    }
+
+    /// Reject non-finite weights. NaN slips through every comparison, so
+    /// without this check a single NaN weight is admitted by the collapse
+    /// loop below (which additionally skips non-`> 0.0` weights as absent).
+    /// Negative weights keep their established absent treatment.
+    pub fn validate(&self) -> Result<()> {
+        for (name, value) in [
+            ("latency", self.latency),
+            ("success", self.success),
+            ("cache", self.cache),
+            ("cost", self.cost),
+            ("quality", self.quality),
+        ] {
+            if !value.is_finite() {
+                return Err(Error::InvalidParameter {
+                    parameter: format!("weights.{name}"),
+                    value,
+                });
+            }
+        }
+        Ok(())
     }
 }
 
@@ -209,7 +232,11 @@ impl RewardPolicy {
             (w.cost, Some(cost)),
             (w.quality, quality),
         ] {
-            if weight <= 0.0 {
+            // NaN fails every comparison, so the naive `weight <= 0.0`
+            // test admits a NaN weight, which then poisons the whole
+            // weighted sum. Non-finite weights are treated as absent here;
+            // record_outcome rejects them explicitly.
+            if weight.is_nan() || weight <= 0.0 {
                 continue;
             }
             // An absent quality score forfeits its weight instead of scoring
@@ -249,6 +276,8 @@ impl RewardPolicy {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::rngs::SmallRng;
+    use rand::SeedableRng;
 
     #[test]
     fn ramp_is_one_below_target_and_zero_above_max() {
@@ -380,5 +409,53 @@ mod tests {
         };
         assert_eq!(policy.reward(&Outcome::new(1.0, true, 0.0)), 1.0);
         assert_eq!(policy.reward(&Outcome::new(1.0, false, 0.0)), 0.0);
+    }
+
+    #[test]
+    fn nan_weights_are_absent_in_scoring_but_rejected_by_validation() {
+        // Direct scoring must never NaN out: the NaN component is treated
+        // as absent (matches Go port).
+        let policy = RewardPolicy {
+            weights: Weights {
+                latency: f64::NAN,
+                ..Weights::default()
+            },
+            ..RewardPolicy::default()
+        };
+        let r = policy.reward(&Outcome::new(100.0, true, 0.001));
+        assert!(!r.is_nan() && (0.0..=1.0).contains(&r));
+        // Explicit validation rejects (learning path enforces via
+        // record_outcome).
+        assert!(policy.weights.validate().is_err());
+        let bad_q = Weights {
+            quality: f64::INFINITY,
+            ..Weights::default()
+        };
+        assert!(bad_q.validate().is_err());
+        assert!(Weights::default().validate().is_ok());
+    }
+
+    #[test]
+    fn record_outcome_rejects_nonfinite_weights() {
+        use crate::policy::Config;
+        let weights = Weights {
+            latency: f64::NAN,
+            ..Weights::default()
+        };
+        let mut policy = crate::ThompsonSampling::new(
+            Config {
+                reward_policy: RewardPolicy {
+                    weights,
+                    ..RewardPolicy::default()
+                },
+                ..Config::default()
+            },
+            Box::new(crate::sampler::Exact),
+        );
+        policy.add_arm("a".into());
+        let mut rng = SmallRng::seed_from_u64(3);
+        let outcome = Outcome::new(100.0, true, 0.001);
+        assert!(policy.record_outcome(&mut rng, "a", &outcome).is_err());
+        assert_eq!(policy.total_pulls(), 0);
     }
 }

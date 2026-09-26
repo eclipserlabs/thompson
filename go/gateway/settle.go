@@ -114,12 +114,18 @@ func (rt *Router) SettleHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("strategy mismatch: event %q vs committed %q", ev.StrategyID, dec.StrategyID), http.StatusConflict)
 		return
 	}
-	// A redelivery of the already-latest version succeeds idempotently when
-	// its content matches (the store accepts exact duplicates) and fails as
-	// a conflict otherwise. Pre-check the version so the response can report
-	// duplication honestly.
-	alreadyLatest := isAlreadyLatest(rt.outcomes, ev)
+	if err := checkAttribution(dec, ev); err != nil {
+		// Forged or inconsistent arm attribution: the ledger and the policy
+		// are untouched (rejected before Submit).
+		http.Error(w, fmt.Sprintf("attribution rejected: %v", err), http.StatusConflict)
+		return
+	}
+	// The already-latest check runs inside the settlement critical section
+	// so the applied/duplicate flags describe the operation that actually
+	// occurred: a redelivery of the latest version succeeds idempotently
+	// when its content matches and fails as a conflict otherwise.
 	rt.settleMu.Lock()
+	alreadyLatest := isAlreadyLatest(rt.outcomes, ev)
 	learned, err := outcome.Settle(rt.outcomes, rt.learner, ev)
 	rt.settleMu.Unlock()
 	if err != nil {
@@ -138,6 +144,42 @@ func (rt *Router) SettleHandler(w http.ResponseWriter, r *http.Request) {
 		Learned:    learned,
 		Duplicate:  alreadyLatest,
 	})
+}
+
+// checkAttribution verifies that a settled outcome is attributable to the
+// execution path authorized by its committed decision:
+//
+//   - a single-attempt outcome must name the selected arm: anything else is
+//     forged attribution (decision A settling arm B);
+//   - multi-attempt outcomes must name only arms from the decision's eligible
+//     set. This is necessary but explicitly not sufficient proof of
+//     execution: per-attempt execution records do not exist in the current
+//     evidence, so fallback arms are sanity-checked, not proven. An empty
+//     ArmID (non-arm executor, e.g. human review) is always allowed and
+//     learns nothing at the arm level.
+//
+// Rejection happens before Submit: neither ledger nor policy is touched.
+func checkAttribution(dec CommittedDecision, ev outcome.OutcomeEvent) error {
+	eligible := make(map[string]bool, len(dec.EligibleArmIDs))
+	for _, id := range dec.EligibleArmIDs {
+		eligible[id] = true
+	}
+	if len(ev.Attempts) == 1 {
+		only := ev.Attempts[0]
+		if only.ArmID != "" && only.ArmID != dec.SelectedArmID {
+			return fmt.Errorf("single-attempt outcome names arm %q but decision selected %q", only.ArmID, dec.SelectedArmID)
+		}
+		return nil
+	}
+	for _, a := range ev.Attempts {
+		if a.ArmID == "" {
+			continue
+		}
+		if !eligible[a.ArmID] {
+			return fmt.Errorf("attempt %q names arm %q outside the decision eligible set", a.AttemptID, a.ArmID)
+		}
+	}
+	return nil
 }
 
 // isAlreadyLatest reports whether ev's version is already the latest

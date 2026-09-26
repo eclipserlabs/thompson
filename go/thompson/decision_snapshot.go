@@ -45,6 +45,9 @@ type DecisionSnapshot struct {
 // The selection algorithm is unchanged: this delegates to the same locked
 // argmax helpers as SelectWithScores for an identical RNG stream.
 func (p *Policy) SelectSnapshot(rng *rand.Rand) (DecisionSnapshot, error) {
+	if rng == nil {
+		return DecisionSnapshot{}, ErrNilRNG
+	}
 	p.mu.Lock()
 	if len(p.arms) == 0 {
 		p.mu.Unlock()
@@ -56,6 +59,10 @@ func (p *Policy) SelectSnapshot(rng *rand.Rand) (DecisionSnapshot, error) {
 	snap.Scores = make(map[string]float64, len(p.order))
 	switch p.config.Selection.Kind {
 	case UCBRegularized:
+		if err := p.checkUCBLocked(); err != nil {
+			p.mu.Unlock()
+			return DecisionSnapshot{}, err
+		}
 		snap.Selected, snap.Scores = p.argmaxUCBWithScoresLocked(rng, snap.Scores)
 	case PhasedSelection:
 		quota := p.config.Selection.Bootstrap
@@ -80,11 +87,22 @@ func (p *Policy) SelectSnapshot(rng *rand.Rand) (DecisionSnapshot, error) {
 	}
 	snap.TotalPulls = p.totalPulls
 	snap.Config = p.config
-	if p.observer != nil {
-		// Same single notification point as SelectWithScores.
-		p.observer.OnSelect(snap.Selected, snap.Scores)
+	obs := p.observer
+	// Snapshot maps are freshly allocated above, so handing them to the
+	// observer cannot alias internal state; the call itself still happens
+	// outside the lock (see SelectWithScores).
+	obsScores := snap.Scores
+	if obs != nil {
+		obsScores = make(map[string]float64, len(snap.Scores))
+		for id, s := range snap.Scores {
+			obsScores[id] = s
+		}
 	}
 	p.mu.Unlock()
+
+	if obs != nil {
+		obs.OnSelect(snap.Selected, obsScores)
+	}
 
 	snap.ConfigHash = hashConfig(snap.Config)
 	return snap, nil
