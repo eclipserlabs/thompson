@@ -1,11 +1,13 @@
 package outcome
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 )
 
 func testAttempt(id string, seq uint, arm string, verified VerifiedOutcome) Attempt {
@@ -172,6 +174,65 @@ func TestFileStoreRoundTripAndTornTail(t *testing.T) {
 	}
 }
 
+func TestFileStoreParseableButUnterminatedTailDiscarded(t *testing.T) {
+	// A crash tearing the write between the final '}' and its newline leaves
+	// a parseable line that was never committed: recovery must drop it and
+	// leave the file byte-clean (no NUL extension from overshoot).
+	path := filepath.Join(t.TempDir(), "outcomes.jsonl")
+	s, err := NewFileOutcomeStore(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if _, err := s.Submit(settledJob("j1", "d1", "a", StatusAccepted, 1)); err != nil {
+		t.Fatalf("submit: %v", err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	// Append a complete, valid event WITHOUT the trailing newline.
+	ev := settledJob("j2", "d2", "a", StatusAccepted, 1)
+	b, _ := json.Marshal(ev)
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.Write(b); err != nil {
+		t.Fatal(err)
+	}
+	_ = f.Close()
+
+	r, err := NewFileOutcomeStore(path)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	defer r.Close()
+	if !r.TornTail() {
+		t.Fatal("torn tail not reported")
+	}
+	if r.Len() != 1 {
+		t.Fatalf("uncommitted tail indexed: len=%d", r.Len())
+	}
+	if _, ok := r.Latest("j2"); ok {
+		t.Fatal("uncommitted job j2 recoverable")
+	}
+	st, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(raw) == 0 || raw[len(raw)-1] != '\n' {
+		t.Fatalf("file left without trailing newline (size=%d)", st.Size())
+	}
+	for _, c := range raw {
+		if c == 0 {
+			t.Fatal("file contains NUL padding from truncate overshoot")
+		}
+	}
+}
+
 func TestFileStoreSingleWriterEnforced(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "outcomes.jsonl")
 	a, err := NewFileOutcomeStore(path)
@@ -229,7 +290,7 @@ func TestConcurrentSubmitVersionOrdering(t *testing.T) {
 			wg.Add(1)
 			go func(v uint64) {
 				defer wg.Done()
-				for tries := 0; tries < 200; tries++ {
+				for tries := 0; tries < 500; tries++ {
 					_, err := s.Submit(settledJob("hot", "d", "a", StatusAccepted, v))
 					if err == nil {
 						return
@@ -238,10 +299,12 @@ func TestConcurrentSubmitVersionOrdering(t *testing.T) {
 						errs <- fmt.Errorf("v%d: %w", v, err)
 						return
 					}
-					// gap/stale: spin briefly; stale-after-commit is fine.
+					// gap/stale: yield so the missing version can commit;
+					// stale-after-commit is fine.
 					if isStale(err) {
 						return
 					}
+					time.Sleep(time.Duration(tries) * 10 * time.Microsecond)
 				}
 				errs <- fmt.Errorf("v%d never committed", v)
 			}(v)
