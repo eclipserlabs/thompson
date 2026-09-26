@@ -38,10 +38,13 @@ pub enum UpdateRule {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Posterior {
     /// Beta shape parameter tracking successes.
+    #[serde(alias = "Alpha")]
     pub alpha: f64,
     /// Beta shape parameter tracking failures.
+    #[serde(alias = "Beta")]
     pub beta: f64,
     /// Number of real observations folded in since construction.
+    #[serde(alias = "Pulls")]
     pub pulls: u64,
 }
 
@@ -118,6 +121,18 @@ impl Posterior {
 
         match rule {
             UpdateRule::Binarize { threshold } => {
+                // Matches the Go port: [0, 1). NaN makes `reward > threshold`
+                // always false (every observation a failure); threshold >= 1
+                // binarizes everything to failure. Both fail loudly.
+                if !threshold.is_finite() || !(0.0..1.0).contains(&threshold) {
+                    // NaN makes `reward > threshold` always false (every
+                    // observation a failure); out-of-range thresholds binarize
+                    // everything one way. Both fail loudly.
+                    return Err(Error::InvalidParameter {
+                        parameter: "binarize.threshold".to_string(),
+                        value: threshold,
+                    });
+                }
                 if reward > threshold {
                     self.alpha += 1.0;
                 } else {
@@ -166,6 +181,36 @@ mod tests {
         assert!(Posterior::new(1.0, -1.0).is_err());
         assert!(Posterior::new(f64::NAN, 1.0).is_err());
         assert!(Posterior::new(f64::INFINITY, 1.0).is_err());
+    }
+
+    #[test]
+    fn observe_rejects_nonfinite_binarize_threshold() {
+        // A NaN threshold makes `reward > threshold` always false: every
+        // observation silently becomes a failure. Out-of-range thresholds
+        // binarize everything one way. Both fail loudly (matches Go port).
+        let mut rng = SmallRng::seed_from_u64(1);
+        let mut p = Posterior::uninformative();
+        assert!(p
+            .observe(
+                &mut rng,
+                0.7,
+                UpdateRule::Binarize {
+                    threshold: f64::NAN
+                }
+            )
+            .is_err());
+        assert!(p
+            .observe(&mut rng, 0.7, UpdateRule::Binarize { threshold: 1.5 })
+            .is_err());
+        assert!(p
+            .observe(&mut rng, 0.7, UpdateRule::Binarize { threshold: -0.5 })
+            .is_err());
+        assert!(p
+            .observe(&mut rng, 0.7, UpdateRule::Binarize { threshold: 0.0 })
+            .is_ok());
+        assert!(p
+            .observe(&mut rng, 0.7, UpdateRule::Binarize { threshold: 0.5 })
+            .is_ok());
     }
 
     #[test]

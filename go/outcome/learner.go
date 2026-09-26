@@ -114,6 +114,25 @@ func NewLearner(policy *thompson.Policy, mapper RewardMapper, history func() []O
 // directly while the learner owns it.
 func (l *Learner) Policy() *thompson.Policy { return l.policy }
 
+// Rebase adopts the policy's current learned state (including any added
+// arms) as the new rebuild genesis. Arm-set changes under a live learner
+// never happen silently: without Rebase, a rebuild restores the genesis
+// arm set and folds fail loudly instead of learning into the wrong place.
+func (l *Learner) Rebase() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.genesis = l.policy.Snapshot()
+}
+
+// armIDs extracts the arm ID set of a snapshot for arm-set comparison.
+func armIDs(s thompson.Snapshot) map[string]bool {
+	out := make(map[string]bool, len(s.Arms))
+	for _, a := range s.Arms {
+		out[a.ID] = true
+	}
+	return out
+}
+
 // Applied returns a copy of the (job -> applied version) cursor.
 func (l *Learner) Applied() map[string]uint64 {
 	l.mu.Lock()
@@ -140,6 +159,12 @@ func (l *Learner) RestoreCursor(applied map[string]uint64) {
 // A newer version for a known job rebuilds from genesis over the full
 // history. A version gap (ev.Version > applied+1) is an error: the caller is
 // missing history and must Rebuild once it has it.
+//
+// Concurrency: calls serialize on the learner mutex, but arrival order may
+// differ from ledger order under concurrency. With a discount policy the
+// result is order-dependent, so concurrent Apply is only equivalent to
+// replay when arrivals match ledger order. The production settlement path
+// serializes calls (gateway settleMu), preserving ledger order.
 func (l *Learner) Apply(ev OutcomeEvent) (bool, error) {
 	if err := ev.Validate(); err != nil {
 		return false, err
@@ -173,6 +198,39 @@ func (l *Learner) Rebuild(evs []OutcomeEvent) (bool, error) {
 }
 
 func (l *Learner) rebuildLocked(evs []OutcomeEvent) (bool, error) {
+	// Arm-set guard: a rebuild restores the genesis arm set. If the live
+	// policy gained or lost arms since genesis (e.g. AddArm under a live
+	// learner), restoring would silently wipe them and subsequent folds
+	// would fail midway. Refuse loudly instead; Rebase() adopts changes.
+	current := armIDs(l.policy.Snapshot())
+	genesis := armIDs(l.genesis)
+	if len(current) != len(genesis) {
+		return false, fmt.Errorf("outcome: arm set changed under learner (live %d arms, genesis %d): call Rebase() to adopt", len(current), len(genesis))
+	}
+	for id := range current {
+		if !genesis[id] {
+			return false, fmt.Errorf("outcome: arm %q not in learner genesis: call Rebase() to adopt", id)
+		}
+	}
+	// Behavior-policy tripwire (B5): the only config mutation path is
+	// RestoreSnapshot below. If it ever changes the logging identity, the
+	// rebuild aborts instead of learning under a swapped configuration.
+	identityBefore := l.policy.LoggingPolicyID()
+	// Rollback state: a fold failure midway must not leave a half-folded
+	// policy behind with a reset cursor. Snapshot first; restore on error.
+	savedPolicy := l.policy.Snapshot()
+	savedApplied := make(map[string]uint64, len(l.applied))
+	for k, v := range l.applied {
+		savedApplied[k] = v
+	}
+	rollback := func(err error) (bool, error) {
+		restoreErr := l.policy.RestoreSnapshot(savedPolicy)
+		if restoreErr != nil {
+			return false, fmt.Errorf("outcome: rebuild failed (%v) and rollback failed (%v)", err, restoreErr)
+		}
+		l.applied = savedApplied
+		return false, err
+	}
 	if err := l.policy.RestoreSnapshot(l.genesis); err != nil {
 		return false, fmt.Errorf("outcome: restore genesis: %w", err)
 	}
@@ -217,10 +275,13 @@ func (l *Learner) rebuildLocked(evs []OutcomeEvent) (bool, error) {
 	for _, ev := range ordered {
 		m, err := l.foldLocked(l.policy, ev)
 		if err != nil {
-			return false, err
+			return rollback(fmt.Errorf("outcome: rebuild fold job %q v%d: %w", ev.JobID, ev.Version, err))
 		}
 		moved = moved || m
 		l.applied[ev.JobID] = ev.Version
+	}
+	if l.policy.LoggingPolicyID() != identityBefore {
+		return rollback(fmt.Errorf("outcome: rebuild changed logging policy identity (was %q)", identityBefore))
 	}
 	return moved, nil
 }
@@ -252,10 +313,27 @@ func (l *Learner) foldLocked(p *thompson.Policy, ev OutcomeEvent) (bool, error) 
 	if armID == "" {
 		return false, nil
 	}
+	// Arm-set contract: the learner folds only into arms present at genesis.
+	// Arms added later (AddArm under a live learner) are refused until an
+	// explicit Rebase adopts them — otherwise a later rebuild would restore
+	// the genesis arm set and either wipe them or fail midway.
+	if !l.armInGenesisLocked(armID) {
+		return false, fmt.Errorf("outcome: arm %q not in learner genesis: call Rebase() to adopt arm-set changes", armID)
+	}
 	if err := p.Record(rngFor(ev.JobID, ev.Version), armID, reward); err != nil {
 		return false, fmt.Errorf("outcome: record job %q v%d: %w", ev.JobID, ev.Version, err)
 	}
 	return true, nil
+}
+
+// armInGenesisLocked reports whether an arm belongs to the genesis arm set.
+func (l *Learner) armInGenesisLocked(armID string) bool {
+	for _, a := range l.genesis.Arms {
+		if a.ID == armID {
+			return true
+		}
+	}
+	return false
 }
 
 // CheckpointVersion is the checkpoint format version.
@@ -321,6 +399,16 @@ func SaveCheckpoint(path string, cp Checkpoint) error {
 	}
 	if err := os.Rename(tmp, path); err != nil {
 		return fmt.Errorf("outcome: rename checkpoint: %w", err)
+	}
+	// Directory sync: without it a crash can lose the rename itself,
+	// leaving the previous checkpoint (or none) after reboot.
+	dir, err := os.Open(filepath.Dir(path))
+	if err != nil {
+		return fmt.Errorf("outcome: open checkpoint dir: %w", err)
+	}
+	defer dir.Close()
+	if err := dir.Sync(); err != nil {
+		return fmt.Errorf("outcome: sync checkpoint dir: %w", err)
 	}
 	return nil
 }

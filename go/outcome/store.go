@@ -15,6 +15,10 @@ import (
 // Submit is idempotent per (job, version) and linearizes concurrent writers:
 // exactly one outcome version per job is latest, versions increase by exactly
 // 1, and a conflicting re-submission of an existing version is rejected.
+//
+// Durability contract: implementations wired into verified mode MUST survive
+// process restart (the file store does; the memory store exists for tests
+// and is rejected at router construction).
 type OutcomeStore interface {
 	// Submit validates, assigns Seq, persists, and returns applied=true when
 	// the event is newly committed. An exact duplicate returns applied=false
@@ -221,6 +225,27 @@ func (s *FileOutcomeStore) recover() error {
 		}
 		if err := ev.Validate(); err != nil {
 			return fmt.Errorf("outcome: ledger %s holds invalid event at ~offset %d: %w", s.path, lineStart, err)
+		}
+		// Recovery enforces the same version invariants as live submission:
+		// versions start at 1 and increase by exactly 1 per job. Exact
+		// duplicate lines (idempotent redelivery persisted twice) are
+		// skipped; gaps, conflicts, and stale versions fail the open loudly
+		// instead of folding a corrupted history silently.
+		if idx, ok := s.latest[ev.JobID]; ok {
+			cur := s.events[idx]
+			switch {
+			case ev.Version == cur.Version && eventsEqual(ev, cur):
+				lineStart += int64(len(line)) + 1
+				continue
+			case ev.Version == cur.Version:
+				return fmt.Errorf("outcome: ledger %s holds conflicting version %d for job %q", s.path, ev.Version, ev.JobID)
+			case ev.Version <= cur.Version:
+				return fmt.Errorf("outcome: ledger %s holds stale version %d for job %q (latest %d)", s.path, ev.Version, ev.JobID, cur.Version)
+			case ev.Version != cur.Version+1:
+				return fmt.Errorf("outcome: ledger %s holds version gap for job %q: latest %d, got %d", s.path, ev.JobID, cur.Version, ev.Version)
+			}
+		} else if ev.Version != 1 {
+			return fmt.Errorf("outcome: ledger %s holds first version %d for job %q, want 1", s.path, ev.Version, ev.JobID)
 		}
 		// Recovery replays history verbatim: Seq is reassigned in file order
 		// so a torn tail never shifts the sequence of surviving events.

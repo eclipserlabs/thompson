@@ -31,6 +31,82 @@ type ReportConfig struct {
 	MinEffect     float64
 	BootstrapN    int
 	BootstrapSeed uint64
+	// MinBootstrapValidFraction refuses conclusive verdicts below it
+	// (default 0.5 when <= 0; see BootstrapValidity for justification).
+	MinBootstrapValidFraction float64
+	// MaxUnmeteredShare bounds missing-cost uncertainty: any treatment
+	// above it fails the missing-cost gate. Negative selects the 0.10
+	// default; exactly 0 disables the gate.
+	MaxUnmeteredShare float64
+	// MaxPlausibleCost is the defensible finite upper cost fill for the
+	// missing-cost HIGH bound. When <= 0 the p90 of observed costs is used
+	// instead and reported as a bounded sensitivity, not a worst case.
+	MaxPlausibleCost float64
+	// ExpectedWeights maps treatment -> assignment probability for the
+	// allocation check (A3). Nil/empty means uniform-only check.
+	ExpectedWeights map[string]float64
+}
+
+// bootstrapThreshold normalizes the validity threshold.
+func bootstrapThreshold(cfg ReportConfig) float64 {
+	if cfg.MinBootstrapValidFraction <= 0 {
+		return 0.5
+	}
+	return cfg.MinBootstrapValidFraction
+}
+
+// maxUnmeteredGate normalizes the missing-cost gate threshold. Zero
+// selects the 0.10 default (gate on); negative disables the gate.
+func maxUnmeteredGate(cfg ReportConfig) (float64, bool) {
+	if cfg.MaxUnmeteredShare < 0 {
+		return 0, false
+	}
+	if cfg.MaxUnmeteredShare == 0 {
+		return 0.10, true
+	}
+	return cfg.MaxUnmeteredShare, true
+}
+
+// checkAllocation enforces the randomization assumption (A3): every
+// matured job's recorded probability must be uniform (within tolerance), or
+// match ExpectedWeights when provided. Nonuniform allocation is rejected —
+// the estimators are unweighted, so treating observational data as
+// randomized would silently bias every comparison. Observational data with
+// varying propensities belongs to OPE (IPW), not to this report.
+func checkAllocation(records []JobRecord, cfg ReportConfig) (bool, string) {
+	const tol = 1e-9
+	var first float64
+	seen := false
+	for _, r := range records {
+		if !r.Matured {
+			continue
+		}
+		if !seen {
+			first, seen = r.Probability, true
+			continue
+		}
+		if math.Abs(r.Probability-first) > tol {
+			return false, fmt.Sprintf("nonuniform assignment probabilities (%.6f vs %.6f): randomized-experiment estimators unsupported; refusing", first, r.Probability)
+		}
+	}
+	if !seen {
+		return true, ""
+	}
+	if len(cfg.ExpectedWeights) > 0 {
+		for _, r := range records {
+			if !r.Matured {
+				continue
+			}
+			want, ok := cfg.ExpectedWeights[r.Treatment]
+			if !ok {
+				return false, fmt.Sprintf("treatment %q missing from expected weights: refusing", r.Treatment)
+			}
+			if math.Abs(r.Probability-want) > tol {
+				return false, fmt.Sprintf("treatment %q probability %.6f != charter %.6f: refusing", r.Treatment, r.Probability, want)
+			}
+		}
+	}
+	return true, ""
 }
 
 // JobRecord is one assigned job evaluated at the maturity cutoff.
@@ -85,6 +161,12 @@ type Comparison struct {
 	RelCIHigh      float64 `json:"rel_ci_high"`
 	Wins           bool    `json:"wins"`
 	MeetsBar       bool    `json:"meets_bar"`
+	// Bootstrap health: a conclusive verdict requires ValidFraction above
+	// the configured threshold (see BootstrapValidity).
+	ValidDraws     int            `json:"valid_draws"`
+	InvalidDraws   int            `json:"invalid_draws"`
+	ValidFraction  float64        `json:"valid_fraction"`
+	InvalidReasons map[string]int `json:"invalid_reasons,omitempty"`
 }
 
 // GateResult is one refusal gate.
@@ -99,9 +181,15 @@ type Sensitivity struct {
 	WorstCaseCensoringWins bool    `json:"worst_case_censoring_wins"`
 	MissingCostLow         float64 `json:"missing_cost_low"`
 	MissingCostHigh        float64 `json:"missing_cost_high"`
-	HalfMaturityStable     bool    `json:"half_maturity_stable"`
-	DoubleMaturityStable   bool    `json:"double_maturity_stable"`
-	CorrectionAsymmetry    string  `json:"correction_asymmetry"`
+	// MissingCostBasis names the upper fill ("max-plausible-cost" or
+	// "p90-bounded-sensitivity"); MissingCostBounded is false when no
+	// defensible finite upper limit exists, in which case LOW/HIGH are a
+	// bounded sensitivity scenario, not absolute worst-case bounds.
+	MissingCostBasis     string `json:"missing_cost_basis"`
+	MissingCostBounded   bool   `json:"missing_cost_bounded"`
+	HalfMaturityStable   bool   `json:"half_maturity_stable"`
+	DoubleMaturityStable bool   `json:"double_maturity_stable"`
+	CorrectionAsymmetry  string `json:"correction_asymmetry"`
 }
 
 // SampleSizeAssessment sizes each comparison from observed dry-run
@@ -364,6 +452,9 @@ func Analyze(records []JobRecord, cfg ReportConfig, baseline, candidate string, 
 	}
 
 	// Gates.
+	if ok, detail := checkAllocation(records, cfg); !ok {
+		rep.Gates = append(rep.Gates, GateResult{"allocation", false, detail})
+	}
 	for n, st := range rep.Treatments {
 		if st.Matured < cfg.MinJobs {
 			rep.Gates = append(rep.Gates, GateResult{"min-jobs-" + n, false,
@@ -372,6 +463,20 @@ func Analyze(records []JobRecord, cfg ReportConfig, baseline, candidate string, 
 		if st.CensoredFraction > cfg.CensorGate {
 			rep.Gates = append(rep.Gates, GateResult{"censoring-" + n, false,
 				fmt.Sprintf("%.3f > %.3f", st.CensoredFraction, cfg.CensorGate)})
+		}
+		if st.Matured > 0 && st.AcceptRate < cfg.QualityFloor {
+			rep.Gates = append(rep.Gates, GateResult{"quality-floor-" + n, false,
+				fmt.Sprintf("accept rate %.3f below floor %.3f", st.AcceptRate, cfg.QualityFloor)})
+		}
+		if share, on := maxUnmeteredGate(cfg); on {
+			unmetered := 0.0
+			if st.Matured > 0 {
+				unmetered = float64(st.UnmeteredJobs) / float64(st.Matured)
+			}
+			if unmetered > share {
+				rep.Gates = append(rep.Gates, GateResult{"missing-cost-" + n, false,
+					fmt.Sprintf("unmetered share %.3f > %.3f: missing-cost uncertainty unbounded", unmetered, share)})
+			}
 		}
 	}
 
@@ -383,13 +488,16 @@ func Analyze(records []JobRecord, cfg ReportConfig, baseline, candidate string, 
 	for _, p := range pairs {
 		cs, bs := byTx[p[0]], byTx[p[1]]
 		diff, rel := pairDiff(cs, bs)
-		lo, hi := bootstrapDiff(cs, bs, cfg.BootstrapN, cfg.BootstrapSeed)
-		rlo, rhi := bootstrapRel(cs, bs, cfg.BootstrapN, cfg.BootstrapSeed)
-		wins := !math.IsNaN(hi) && hi < 0
+		boot := bootstrapCompare(cs, bs, cfg.BootstrapN, cfg.BootstrapSeed)
+		wins := !math.IsNaN(boot.DiffHigh) && boot.DiffHigh < 0
+		validOK := boot.Validity.ValidFraction() >= bootstrapThreshold(cfg)
 		rep.Comparisons = append(rep.Comparisons, Comparison{
 			Pair: p[0] + "-" + p[1], Diff: diff, RelImprovement: rel,
-			CILow: lo, CIHigh: hi, RelCILow: rlo, RelCIHigh: rhi,
-			Wins: wins, MeetsBar: wins && !math.IsNaN(rlo) && rlo >= cfg.MinEffect,
+			CILow: boot.DiffLow, CIHigh: boot.DiffHigh,
+			RelCILow: boot.RelLow, RelCIHigh: boot.RelHigh,
+			Wins: wins, MeetsBar: wins && validOK && !math.IsNaN(boot.RelLow) && boot.RelLow >= cfg.MinEffect,
+			ValidDraws: boot.Validity.Valid, InvalidDraws: boot.Validity.Invalid,
+			ValidFraction: boot.Validity.ValidFraction(), InvalidReasons: boot.Validity.Reasons,
 		})
 	}
 
@@ -434,7 +542,11 @@ func summarize(rs []JobRecord) TreatmentStats {
 		}
 	}
 	if st.Matured > 0 {
-		st.CensoredFraction = float64(st.Unknown) / float64(st.Matured)
+		// Censored = UNKNOWN + PENDING + unresolved (matured, no outcome).
+		// PENDING and unresolved jobs must neither inflate apparent quality
+		// nor disappear from the censoring calculation.
+		censored := st.Unknown + st.Pending + st.Unresolved
+		st.CensoredFraction = float64(censored) / float64(st.Matured)
 	}
 	meteredAccepted, meteredCount := 0.0, 0
 	for _, r := range rs {
@@ -488,63 +600,101 @@ func pairDiff(candidate, baseline []JobRecord) (diff, rel float64) {
 	return pc - pb, (pb - pc) / pb
 }
 
-// bootstrapDiff resamples jobs with replacement (fixed seed) and returns the
-// 2.5/97.5 percentiles of the candidate-minus-baseline difference.
-func bootstrapDiff(candidate, baseline []JobRecord, n int, seed uint64) (float64, float64) {
-	if n <= 0 || len(candidate) == 0 || len(baseline) == 0 {
-		return math.NaN(), math.NaN()
-	}
-	rng := rand.New(rand.NewPCG(seed, seed>>1))
-	diffs := make([]float64, 0, n)
-	for b := 0; b < n; b++ {
-		rc := make([]JobRecord, len(candidate))
-		for i := range rc {
-			rc[i] = candidate[rng.IntN(len(candidate))]
-		}
-		rb := make([]JobRecord, len(baseline))
-		for i := range rb {
-			rb[i] = baseline[rng.IntN(len(baseline))]
-		}
-		d, _ := pairDiff(rc, rb)
-		if !math.IsNaN(d) {
-			diffs = append(diffs, d)
-		}
-	}
-	if len(diffs) == 0 {
-		return math.NaN(), math.NaN()
-	}
-	sort.Float64s(diffs)
-	return percentile(diffs, 2.5), percentile(diffs, 97.5)
+// BootstrapValidity tracks bootstrap resample health. A resample is valid
+// only if both arms yield a defined difference; otherwise it is dropped
+// with its reason recorded.
+//
+// Statistical justification for the coverage rule: the bootstrap CI
+// estimates the sampling distribution of the difference. When most
+// resamples are undefined (typically: successes too rare for the mean to
+// exist), the CI is computed over a lucky survivor subset and reads too
+// narrow — a textbook survivorship bias. Below MinBootstrapValidFraction
+// (default 0.5) the CI no longer summarizes the experiment, so no
+// conclusive verdict may rest on it.
+type BootstrapValidity struct {
+	Requested int            `json:"requested"`
+	Valid     int            `json:"valid"`
+	Invalid   int            `json:"invalid"`
+	Reasons   map[string]int `json:"invalid_reasons"`
 }
 
-// bootstrapRel resamples jobs and returns the 2.5/97.5 percentiles of the
-// relative improvement (pb-pc)/pb. Resamples with no baseline success carry
-// no information and are skipped.
-func bootstrapRel(candidate, baseline []JobRecord, n int, seed uint64) (float64, float64) {
-	if n <= 0 || len(candidate) == 0 || len(baseline) == 0 {
-		return math.NaN(), math.NaN()
+// ValidFraction is Valid/Requested (0 when Requested is 0).
+func (b BootstrapValidity) ValidFraction() float64 {
+	if b.Requested <= 0 {
+		return 0
+	}
+	return float64(b.Valid) / float64(b.Requested)
+}
+
+// diffValidity classifies one candidate/baseline pair draw.
+func diffValidity(cs, bs []JobRecord) (diff, rel float64, valid bool, reason string) {
+	pc, pb := primaryOf(cs), primaryOf(bs)
+	if len(cs) == 0 || len(bs) == 0 {
+		return math.NaN(), math.NaN(), false, "empty-arm"
+	}
+	if math.IsNaN(pc) {
+		return math.NaN(), math.NaN(), false, "no-candidate-success"
+	}
+	if math.IsNaN(pb) {
+		return math.NaN(), math.NaN(), false, "no-baseline-success"
+	}
+	if pb == 0 {
+		return math.NaN(), math.NaN(), false, "zero-baseline"
+	}
+	return pc - pb, (pb - pc) / pb, true, ""
+}
+
+// BootstrapResult is one bootstrap comparison: percentile intervals plus
+// the validity accounting behind them.
+type BootstrapResult struct {
+	DiffLow, DiffHigh float64
+	RelLow, RelHigh   float64
+	Validity          BootstrapValidity
+}
+
+// bootstrapCompare resamples jobs with replacement (fixed seed) once and
+// derives both the difference and relative-improvement intervals from the
+// SAME resamples, so the two CIs cannot disagree about the data.
+func bootstrapCompare(cs, bs []JobRecord, n int, seed uint64) BootstrapResult {
+	var res BootstrapResult
+	res.Validity.Requested = n
+	res.Validity.Reasons = map[string]int{}
+	if n <= 0 || len(cs) == 0 || len(bs) == 0 {
+		res.DiffLow, res.DiffHigh = math.NaN(), math.NaN()
+		res.RelLow, res.RelHigh = math.NaN(), math.NaN()
+		return res
 	}
 	rng := rand.New(rand.NewPCG(seed, seed>>1))
-	rels := make([]float64, 0, n)
+	var diffs, rels []float64
 	for b := 0; b < n; b++ {
-		rc := make([]JobRecord, len(candidate))
+		rc := make([]JobRecord, len(cs))
 		for i := range rc {
-			rc[i] = candidate[rng.IntN(len(candidate))]
+			rc[i] = cs[rng.IntN(len(cs))]
 		}
-		rb := make([]JobRecord, len(baseline))
+		rb := make([]JobRecord, len(bs))
 		for i := range rb {
-			rb[i] = baseline[rng.IntN(len(baseline))]
+			rb[i] = bs[rng.IntN(len(bs))]
 		}
-		_, rel := pairDiff(rc, rb)
-		if !math.IsNaN(rel) {
-			rels = append(rels, rel)
+		d, rel, valid, reason := diffValidity(rc, rb)
+		if !valid {
+			res.Validity.Invalid++
+			res.Validity.Reasons[reason]++
+			continue
 		}
+		res.Validity.Valid++
+		diffs = append(diffs, d)
+		rels = append(rels, rel)
 	}
-	if len(rels) == 0 {
-		return math.NaN(), math.NaN()
+	if len(diffs) == 0 {
+		res.DiffLow, res.DiffHigh = math.NaN(), math.NaN()
+		res.RelLow, res.RelHigh = math.NaN(), math.NaN()
+		return res
 	}
+	sort.Float64s(diffs)
 	sort.Float64s(rels)
-	return percentile(rels, 2.5), percentile(rels, 97.5)
+	res.DiffLow, res.DiffHigh = percentile(diffs, 2.5), percentile(diffs, 97.5)
+	res.RelLow, res.RelHigh = percentile(rels, 2.5), percentile(rels, 97.5)
+	return res
 }
 
 func percentile(sorted []float64, p float64) float64 {
@@ -605,10 +755,12 @@ func sensitivities(byTx map[string][]JobRecord, cfg ReportConfig, baseline, cand
 	p90 := jobCostP90(cs)
 	worst := worstCaseCopy(cs, p90)
 	d, _ := pairDiff(worst, bs)
-	_, hi := bootstrapDiff(worst, bs, cfg.BootstrapN, cfg.BootstrapSeed)
-	s.WorstCaseCensoringWins = !math.IsNaN(hi) && hi < 0 && d < 0
-	// 2. Missing-cost bounds over all matured jobs (zero vs p90 fill).
-	s.MissingCostLow, s.MissingCostHigh = missingCostBounds(cs, bs)
+	wboot := bootstrapCompare(worst, bs, cfg.BootstrapN, cfg.BootstrapSeed)
+	s.WorstCaseCensoringWins = !math.IsNaN(wboot.DiffHigh) && wboot.DiffHigh < 0 && d < 0
+	// 2. Adversarial missing-cost bounds (A1): LOW favors the candidate
+	// (candidate low fill, baseline high fill), HIGH the reverse.
+	s.MissingCostLow, s.MissingCostHigh, s.MissingCostBasis, s.MissingCostBounded =
+		missingCostBounds(cs, bs, cfg)
 	// 3. Maturity stability is filled in by the caller (MaturityStability);
 	// 4. Correction asymmetry tally.
 	s.CorrectionAsymmetry = correctionTally(byTx)
@@ -618,7 +770,9 @@ func sensitivities(byTx map[string][]JobRecord, cfg ReportConfig, baseline, cand
 func jobCosts(rs []JobRecord) []float64 {
 	var out []float64
 	for _, r := range rs {
-		if r.HasOutcome {
+		// Metered costs only: unmetered rows carry CostMetered 0 as a
+		// placeholder, which must not drag the percentile down.
+		if r.HasOutcome && r.FullyMetered {
 			out = append(out, r.CostMetered)
 		}
 	}
@@ -649,7 +803,18 @@ func worstCaseCopy(cs []JobRecord, p90 float64) []JobRecord {
 	return out
 }
 
-func missingCostBounds(cs, bs []JobRecord) (float64, float64) {
+// missingCostBounds implements the adversarial missing-cost sensitivity
+// (A1). Costs are non-negative, so 0 is the defensible lower fill. The
+// upper fill is MaxPlausibleCost when configured, else the observed p90
+// (labeled bounded, not worst-case). LOW favors the candidate
+// (candidate-low, baseline-high) and HIGH the reverse; LOW <= HIGH holds
+// whenever both point estimates exist, because lowering the candidate and
+// raising the baseline can only move the difference down.
+//
+// If missing costs exist but no finite upper limit is defensible, the
+// result is marked unbounded: callers must refuse conclusive claims on
+// missing-cost uncertainty, not manufacture a bound.
+func missingCostBounds(cs, bs []JobRecord, cfg ReportConfig) (low, high float64, basis string, bounded bool) {
 	fill := func(rs []JobRecord, v float64) []JobRecord {
 		out := make([]JobRecord, len(rs))
 		copy(out, rs)
@@ -661,9 +826,26 @@ func missingCostBounds(cs, bs []JobRecord) (float64, float64) {
 		}
 		return out
 	}
-	loD, _ := pairDiff(fill(cs, 0), fill(bs, 0))
-	hiD, _ := pairDiff(fill(cs, jobCostP90(cs)), fill(bs, jobCostP90(bs)))
-	return loD, hiD
+	hasMissing := false
+	for _, r := range append(append([]JobRecord(nil), cs...), bs...) {
+		if r.HasOutcome && !r.FullyMetered {
+			hasMissing = true
+			break
+		}
+	}
+	upper := cfg.MaxPlausibleCost
+	basis, bounded = "max-plausible-cost", true
+	if upper <= 0 {
+		upper = math.Max(jobCostP90(cs), jobCostP90(bs))
+		basis = "p90-bounded-sensitivity"
+		// Without missing costs the fills are vacuous (LOW/HIGH coincide
+		// with the point estimate); unboundedness only matters when
+		// something is actually missing.
+		bounded = !hasMissing
+	}
+	loD, _ := pairDiff(fill(cs, 0), fill(bs, upper))
+	hiD, _ := pairDiff(fill(cs, upper), fill(bs, 0))
+	return loD, hiD, basis, bounded
 }
 
 func correctionTally(byTx map[string][]JobRecord) string {
@@ -746,6 +928,11 @@ func verdict(rep Report, cfg ReportConfig, baseline, candidate string) (string, 
 		}
 		if !c.MeetsBar {
 			allBar = false
+		}
+		if c.ValidFraction < bootstrapThreshold(cfg) {
+			return "INCONCLUSIVE", append(reasons,
+				fmt.Sprintf("pair %s has insufficient valid bootstrap coverage (%.2f < %.2f): conclusive claim refused",
+					c.Pair, c.ValidFraction, bootstrapThreshold(cfg)))
 		}
 	}
 	if !allWin {

@@ -1,11 +1,7 @@
 //! Control-plane binary — serves Registry via axum.
 //! Listens on `PORT` (default 8080), exposes `/snapshots`, `/snapshots/:key`, `/health`.
 
-use control_plane::{
-    server::router,
-    storage::{FileStorage, MemoryStorage, RegistryStorage},
-    Registry,
-};
+use control_plane::{server::router, storage::RegistryStorage, Registry};
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 #[tokio::main]
@@ -21,15 +17,27 @@ async fn main() -> anyhow::Result<()> {
     let storage_kind = std::env::var("STORAGE").unwrap_or_else(|_| "memory".to_string());
     let registry = Arc::new(Registry::new());
 
-    // Optional file storage for local durability
-    let storage: Arc<dyn RegistryStorage> = match storage_kind.as_str() {
-        "file" => {
-            let dir = std::env::var("STORAGE_DIR").unwrap_or_else(|_| "/tmp/traverse".to_string());
-            tracing::info!(dir=%dir, "using FileStorage");
-            Arc::new(FileStorage::new(dir))
-        }
-        _ => Arc::new(MemoryStorage),
-    };
+    // Optional file storage for local durability. Unknown backends fail
+    // fast: silently falling back to memory (as STORAGE=s3 once did) loses
+    // snapshots on restart while the operator believes they are durable.
+    // storage_from_kind is unit-tested (s3/postgres/bogus rejected).
+    let storage_dir = std::env::var("STORAGE_DIR").unwrap_or_else(|_| "/tmp/traverse".to_string());
+    let storage: Arc<dyn RegistryStorage> =
+        match control_plane::storage::storage_from_kind(storage_kind.as_str(), &storage_dir) {
+            Ok(s) => {
+                if storage_kind.as_str() == "memory" {
+                    tracing::warn!(
+                        "using MemoryStorage: snapshots are NOT durable across restarts"
+                    );
+                } else {
+                    tracing::info!(dir=%storage_dir, "using FileStorage");
+                }
+                s
+            }
+            Err(e) => {
+                anyhow::bail!("{e}");
+            }
+        };
 
     // Background persist every 30s (best-effort)
     let persister = control_plane::storage::Persister::new(

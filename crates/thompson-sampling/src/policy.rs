@@ -247,6 +247,14 @@ impl ThompsonSampling {
                 }
             }
             Selection::UcbRegularized { c, until_pulls } => {
+                // NaN poisons every score comparison (all false), silently
+                // degenerating selection to first-arm-wins.
+                if !c.is_finite() {
+                    return Err(Error::InvalidParameter {
+                        parameter: "selection.ucb_regularized.c".to_string(),
+                        value: c,
+                    });
+                }
                 if self.observer.is_some() {
                     self.argmax_ucb_with_scores(rng, c, until_pulls)
                 } else {
@@ -468,6 +476,7 @@ impl ThompsonSampling {
         id: &str,
         outcome: &Outcome,
     ) -> Result<()> {
+        self.config.reward_policy.weights.validate()?;
         let reward = self.config.reward_policy.reward(outcome);
         self.record(rng, id, reward)
     }
@@ -574,15 +583,27 @@ impl ThompsonSampling {
 /// trips of the same value, so it is irrelevant to selection — but it does mean
 /// a snapshot is not a byte-identical fingerprint of a policy. Compare restored
 /// policies with a tolerance, not with `==`.
+///
+/// # Legacy readers
+///
+/// PascalCase aliases (`Arms`, `ID`, `Alpha`, …) decode pre-canonical Go
+/// snapshots; writers always emit canonical snake_case.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Snapshot {
     /// Snapshot format version.
     pub version: u32,
     /// Configuration in force when the snapshot was taken.
+    ///
+    /// `default` keeps pre-canonical Go snapshots (which omitted `config`)
+    /// readable: they restore under the default configuration. New writers
+    /// always include it.
+    #[serde(default)]
     pub config: Config,
     /// Every arm and its posterior.
+    #[serde(alias = "Arms")]
     pub arms: Vec<Arm>,
     /// Total observations recorded.
+    #[serde(alias = "TotalPulls")]
     pub total_pulls: u64,
 }
 
@@ -1054,5 +1075,25 @@ mod tests {
         for _ in 0..50 {
             assert_eq!(policy.select(&mut rng).unwrap(), "b");
         }
+    }
+
+    #[test]
+    fn nan_ucb_coefficient_is_rejected() {
+        // NaN poisons every score comparison (all false), silently
+        // degenerating selection to first-arm-wins (matches Go port).
+        let mut policy = ThompsonSampling::new(
+            Config {
+                selection: Selection::UcbRegularized {
+                    c: f64::NAN,
+                    until_pulls: 30,
+                },
+                ..Config::default()
+            },
+            Box::new(crate::sampler::Exact),
+        );
+        for id in ["a", "b"] {
+            policy.add_arm(id.into());
+        }
+        assert!(policy.select(&mut rng()).is_err());
     }
 }
