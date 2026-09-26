@@ -30,6 +30,8 @@ Thompson is not a replacement for your application, your validators, or your exi
 
 ## How it works
 
+![How Thompson works: select, persist the decision, execute, receive a verified outcome, settle and learn, improve](docs/how-it-works.svg)
+
 A decision records the selected arm, eligible alternatives, policy identity, and the policy state used for selection.
 
 An outcome describes the result of the job rather than merely the transport response. Outcomes can arrive late, remain unknown, or be corrected after further verification.
