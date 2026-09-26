@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"sync"
 	"syscall"
@@ -180,6 +181,26 @@ func (s *FileOutcomeStore) recover() error {
 	if _, err := s.file.Seek(0, 0); err != nil {
 		return fmt.Errorf("outcome: seek %s: %w", s.path, err)
 	}
+	if !complete {
+		// The final line was never newline-terminated, so its Submit never
+		// completed: drop it before indexing, even if it parses. (Truncating
+		// first also avoids overshooting the file size by the missing byte.)
+		data, err := io.ReadAll(s.file)
+		if err != nil {
+			return fmt.Errorf("outcome: read %s: %w", s.path, err)
+		}
+		truncTo := int64(bytes.LastIndexByte(data, '\n') + 1)
+		if err := s.file.Truncate(truncTo); err != nil {
+			return fmt.Errorf("outcome: truncate torn tail %s: %w", s.path, err)
+		}
+		if _, err := s.file.Seek(0, 0); err != nil {
+			return fmt.Errorf("outcome: seek %s: %w", s.path, err)
+		}
+		if err := s.file.Sync(); err != nil {
+			return fmt.Errorf("outcome: sync %s: %w", s.path, err)
+		}
+		s.tornTail = true
+	}
 	scanner := bufio.NewScanner(s.file)
 	buf := make([]byte, 0, 64*1024)
 	scanner.Buffer(buf, 10*1024*1024)
@@ -208,22 +229,6 @@ func (s *FileOutcomeStore) recover() error {
 	}
 	if err := scanner.Err(); err != nil {
 		// bufio.ErrTooLong or I/O: a torn tail, not a valid prefix break.
-		tornAt = lineStart
-	}
-	if tornAt < 0 && !complete {
-		// Final line lacks its newline: pop it, it was never committed.
-		if n := len(s.events); n > 0 {
-			dropped := s.events[n-1]
-			s.events = s.events[:n-1]
-			if idx, ok := s.latest[dropped.JobID]; ok && idx == n-1 {
-				delete(s.latest, dropped.JobID)
-				for i, e := range s.events {
-					if e.JobID == dropped.JobID {
-						s.latest[dropped.JobID] = i
-					}
-				}
-			}
-		}
 		tornAt = lineStart
 	}
 	if tornAt >= 0 {
