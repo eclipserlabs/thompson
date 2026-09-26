@@ -14,6 +14,11 @@ import (
 // ErrNoArms is returned by Select when no arms are registered.
 var ErrNoArms = errors.New("thompson: no arms registered")
 
+// ErrNilRNG is returned when a caller passes a nil random number generator.
+// Sampling and Bernoulli updates dereference the RNG; failing explicitly
+// beats a nil-pointer panic deep inside a selection or update.
+var ErrNilRNG = errors.New("thompson: nil random number generator")
+
 // SelectionKind selects how an arm is chosen from the current posteriors.
 type SelectionKind int
 
@@ -143,13 +148,20 @@ func NewDefault(armIDs ...string) *Policy {
 // the prior applied and whether the arm was new.
 func (p *Policy) AddArm(id string) (InformedPrior, bool) {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 
 	if _, exists := p.arms[id]; exists {
+		p.mu.Unlock()
 		return InformedPrior{}, false
 	}
 	prior := priorFor(p.config.WarmStart, id, p.order, p.arms)
 	p.insertLocked(id, prior)
+	warmStarted := p.arms[id].WarmStarted
+	obs := p.observer
+	p.mu.Unlock()
+	// Outside the lock: observers may call back into the policy.
+	if obs != nil {
+		obs.OnArmAdded(id, warmStarted)
+	}
 	return prior, true
 }
 
@@ -157,12 +169,18 @@ func (p *Policy) AddArm(id string) (InformedPrior, bool) {
 // warm-start strategy. It reports whether the arm was new.
 func (p *Policy) AddArmWithPrior(id string, prior InformedPrior) bool {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 
 	if _, exists := p.arms[id]; exists {
+		p.mu.Unlock()
 		return false
 	}
 	p.insertLocked(id, prior)
+	warmStarted := p.arms[id].WarmStarted
+	obs := p.observer
+	p.mu.Unlock()
+	if obs != nil {
+		obs.OnArmAdded(id, warmStarted)
+	}
 	return true
 }
 
@@ -175,9 +193,9 @@ func (p *Policy) insertLocked(id string, prior InformedPrior) {
 	}
 	p.order = append(p.order, id)
 	sort.Strings(p.order)
-	if p.observer != nil {
-		p.observer.OnArmAdded(id, warmStarted)
-	}
+	// No notification here: callers (AddArm, AddArmWithPrior) notify after
+	// unlocking, exactly once. Notifying under the caller's lock would
+	// deadlock reentrant observers.
 }
 
 // SetObserver attaches an observer for metrics/logging. Nil clears it.
@@ -326,15 +344,22 @@ func (p *Policy) ConfigHash() string {
 // Scores are true Beta samples (or, when Phased forced, posterior means) —
 // never stale means. This is the evidence path for DecisionStarted.sampled_scores.
 func (p *Policy) SelectWithScores(rng *rand.Rand) (string, map[string]float64, error) {
+	if rng == nil {
+		return "", nil, ErrNilRNG
+	}
 	p.mu.Lock()
-	defer p.mu.Unlock()
 	if len(p.arms) == 0 {
+		p.mu.Unlock()
 		return "", nil, ErrNoArms
 	}
 	scores := make(map[string]float64, len(p.order))
 	var chosen string
 	switch p.config.Selection.Kind {
 	case UCBRegularized:
+		if err := p.checkUCBLocked(); err != nil {
+			p.mu.Unlock()
+			return "", nil, err
+		}
 		chosen, scores = p.argmaxUCBWithScoresLocked(rng, scores)
 	case PhasedSelection:
 		quota := p.config.Selection.Bootstrap
@@ -352,9 +377,18 @@ func (p *Policy) SelectWithScores(rng *rand.Rand) (string, map[string]float64, e
 	default:
 		chosen, scores = p.argmaxSampledWithScoresLocked(rng, scores)
 	}
-	if p.observer != nil {
-		// Observer sees same true scores; keep single notification point.
-		p.observer.OnSelect(chosen, scores)
+	obs := p.observer
+	p.mu.Unlock()
+	if obs != nil {
+		// Notify outside the policy lock: observers that inspect the policy
+		// (Stats, Select) or trigger downstream learning would otherwise
+		// self-deadlock on the non-reentrant mutex. The observer gets its
+		// own copy; the caller keeps the original.
+		obsScores := make(map[string]float64, len(scores))
+		for id, s := range scores {
+			obsScores[id] = s
+		}
+		obs.OnSelect(chosen, obsScores)
 	}
 	return chosen, scores, nil
 }
@@ -365,10 +399,13 @@ func (p *Policy) SelectWithScores(rng *rand.Rand) (string, map[string]float64, e
 // back through Record or RecordOutcome. Selecting without recording is
 // legitimate — a request may be cancelled — and simply teaches nothing.
 func (p *Policy) Select(rng *rand.Rand) (string, error) {
+	if rng == nil {
+		return "", ErrNilRNG
+	}
 	p.mu.Lock()
-	defer p.mu.Unlock()
 
 	if len(p.arms) == 0 {
+		p.mu.Unlock()
 		return "", ErrNoArms
 	}
 
@@ -379,6 +416,10 @@ func (p *Policy) Select(rng *rand.Rand) (string, error) {
 	}
 	switch p.config.Selection.Kind {
 	case UCBRegularized:
+		if err := p.checkUCBLocked(); err != nil {
+			p.mu.Unlock()
+			return "", err
+		}
 		if p.observer != nil {
 			chosen, scores = p.argmaxUCBWithScoresLocked(rng, scores)
 		} else {
@@ -411,8 +452,15 @@ func (p *Policy) Select(rng *rand.Rand) (string, error) {
 		}
 	}
 
-	if p.observer != nil {
-		p.observer.OnSelect(chosen, scores)
+	obs := p.observer
+	p.mu.Unlock()
+	if obs != nil {
+		// Outside the lock (see SelectWithScores): observers may re-enter.
+		obsScores := make(map[string]float64, len(scores))
+		for id, s := range scores {
+			obsScores[id] = s
+		}
+		obs.OnSelect(chosen, obsScores)
 	}
 
 	return chosen, nil
@@ -420,20 +468,45 @@ func (p *Policy) Select(rng *rand.Rand) (string, error) {
 
 // SelectWith chooses an arm using a custom SelectionStrategy, bypassing
 // config.Selection. This is the first-class extension point for selection.
+//
+// Isolation: the strategy receives deep copies (fresh Arm values and a fresh
+// order slice) snapshotted under the policy lock, and runs after the lock is
+// released. A malicious or buggy strategy can neither mutate live posteriors
+// nor retain usable references to internal state, and it cannot deadlock the
+// policy by calling back into it. The public signature is unchanged.
 func (p *Policy) SelectWith(rng *rand.Rand, strategy SelectionStrategy) (string, error) {
+	if rng == nil {
+		return "", ErrNilRNG
+	}
+	if strategy == nil {
+		return "", fmt.Errorf("thompson: nil selection strategy")
+	}
 	p.mu.Lock()
-	defer p.mu.Unlock()
-
 	if len(p.arms) == 0 {
+		p.mu.Unlock()
 		return "", ErrNoArms
 	}
-	chosen := strategy.Select(rng, p.arms, p.order, p.sampler, p.totalPulls)
-	if p.observer != nil {
-		scores := make(map[string]float64, len(p.order))
-		for _, id := range p.order {
-			scores[id] = p.arms[id].Posterior.Mean()
+	armsCopy := make(map[string]*Arm, len(p.arms))
+	for id, a := range p.arms {
+		clone := *a
+		armsCopy[id] = &clone
+	}
+	orderCopy := append([]string(nil), p.order...)
+	sampler := p.sampler
+	total := p.totalPulls
+	obs := p.observer
+	p.mu.Unlock()
+
+	chosen := strategy.Select(rng, armsCopy, orderCopy, sampler, total)
+	if _, ok := armsCopy[chosen]; !ok {
+		return "", fmt.Errorf("thompson: strategy selected unknown arm %q", chosen)
+	}
+	if obs != nil {
+		scores := make(map[string]float64, len(armsCopy))
+		for id, a := range armsCopy {
+			scores[id] = a.Posterior.Mean()
 		}
-		p.observer.OnSelect(chosen, scores)
+		obs.OnSelect(chosen, scores)
 	}
 	return chosen, nil
 }
@@ -471,6 +544,17 @@ func (p *Policy) argmaxSampledWithScoresLocked(rng *rand.Rand, scores map[string
 		}
 	}
 	return best, scores
+}
+
+// checkUCBLocked rejects a non-finite UCB bonus coefficient. NaN poisons
+// every score comparison (all false), silently degenerating selection to
+// first-arm-wins; +Inf pins every under-explored arm at infinity.
+func (p *Policy) checkUCBLocked() error {
+	c := p.config.Selection.C
+	if math.IsNaN(c) || math.IsInf(c, 0) {
+		return fmt.Errorf("thompson: invalid UCB coefficient %v", c)
+	}
+	return nil
 }
 
 func (p *Policy) argmaxUCBWithScoresLocked(rng *rand.Rand, scores map[string]float64) (string, map[string]float64) {
@@ -536,14 +620,18 @@ func (p *Policy) leastPulledBelowLocked(threshold uint64) (string, bool) {
 
 // Record folds a raw reward in [0, 1] into an arm's posterior.
 func (p *Policy) Record(rng *rand.Rand, id string, reward float64) error {
+	if rng == nil {
+		return ErrNilRNG
+	}
 	p.mu.Lock()
-	defer p.mu.Unlock()
 
 	arm, exists := p.arms[id]
 	if !exists {
+		p.mu.Unlock()
 		return fmt.Errorf("thompson: unknown arm %q", id)
 	}
 	if err := arm.Posterior.Observe(rng, reward, p.config.UpdateRule); err != nil {
+		p.mu.Unlock()
 		return err
 	}
 	arm.CumulativeReward += reward
@@ -551,16 +639,23 @@ func (p *Policy) Record(rng *rand.Rand, id string, reward float64) error {
 	p.totalPulls++
 
 	discount := NewFixedDiscount(p.config.Discount)
+	discounted := false
 	if factor := discount.Factor(); factor > 0 {
 		for _, other := range p.arms {
 			other.Posterior.Discount(factor)
 		}
-		if p.observer != nil {
-			p.observer.OnDiscount(factor)
-		}
+		discounted = true
 	}
-	if p.observer != nil {
-		p.observer.OnRecord(id, reward, posteriorSnap)
+	obs := p.observer
+	discountFactor := discount.Factor()
+	p.mu.Unlock()
+
+	// Notifications outside the lock (see SelectWithScores).
+	if discounted && obs != nil {
+		obs.OnDiscount(discountFactor)
+	}
+	if obs != nil {
+		obs.OnRecord(id, reward, posteriorSnap)
 	}
 	return nil
 }
@@ -579,6 +674,9 @@ func RestoreFromStore(store SnapshotStore, config Config, sampler Sampler) (*Pol
 
 // RecordOutcome scores an outcome through the reward policy and records it.
 func (p *Policy) RecordOutcome(rng *rand.Rand, id string, outcome Outcome) error {
+	if err := p.config.Reward.Weights.Validate(); err != nil {
+		return err
+	}
 	return p.Record(rng, id, p.config.Reward.Reward(outcome))
 }
 

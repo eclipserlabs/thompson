@@ -1,5 +1,10 @@
 package thompson
 
+import (
+	"fmt"
+	"math"
+)
+
 // Outcome is the observed result of a single request.
 type Outcome struct {
 	LatencyMs float64
@@ -76,6 +81,29 @@ func DefaultRewardPolicy() RewardPolicy {
 // SuccessOnlyWeights scores only whether the request succeeded.
 func SuccessOnlyWeights() Weights { return Weights{Success: 1} }
 
+// Validate rejects non-finite weights. NaN slips through every comparison
+// (`NaN <= 0` is false), so without this check a single NaN weight would be
+// admitted by the collapse loop; the loop itself additionally skips
+// non-positive-or-NaN weights as absent (see Reward). Negative weights keep
+// their established absent treatment.
+func (w Weights) Validate() error {
+	for _, c := range []struct {
+		name  string
+		value float64
+	}{
+		{"latency", w.Latency},
+		{"success", w.Success},
+		{"cache", w.Cache},
+		{"cost", w.Cost},
+		{"quality", w.Quality},
+	} {
+		if math.IsNaN(c.value) || math.IsInf(c.value, 0) {
+			return fmt.Errorf("thompson: non-finite %s weight %v", c.name, c.value)
+		}
+	}
+	return nil
+}
+
 // rampDown scores 1.0 at or below target and 0.0 at or above max.
 func rampDown(value, target, max float64) float64 {
 	if value != value || value <= target { // NaN or below target
@@ -115,7 +143,11 @@ func (rp RewardPolicy) Reward(o Outcome) float64 {
 
 	weighted, totalWeight := 0.0, 0.0
 	for _, c := range components {
-		if c.weight <= 0 || !c.present {
+		// `!(weight > 0)` (not `weight <= 0`): NaN fails every comparison,
+		// so the naive test admits a NaN weight, which then poisons the
+		// whole weighted sum to NaN. A non-finite weight is treated as
+		// absent, exactly like a zero weight.
+		if !(c.weight > 0) || !c.present {
 			continue
 		}
 		weighted += c.weight * c.value

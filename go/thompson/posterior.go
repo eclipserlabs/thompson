@@ -98,12 +98,20 @@ func (p *Posterior) Observe(rng *rand.Rand, reward float64, rule UpdateRule) err
 
 	switch rule.Kind {
 	case Binarize:
+		if rule.Threshold != rule.Threshold || rule.Threshold < 0 || rule.Threshold >= 1 {
+			// A NaN threshold makes every comparison false (all failures);
+			// out-of-range thresholds silently binarize everything one way.
+			return fmt.Errorf("thompson: binarize threshold must lie in [0, 1), got %v", rule.Threshold)
+		}
 		if reward > rule.Threshold {
 			p.Alpha++
 		} else {
 			p.Beta++
 		}
 	case Bernoulli:
+		if rng == nil {
+			return ErrNilRNG
+		}
 		if rng.Float64() < reward {
 			p.Alpha++
 		} else {

@@ -124,8 +124,12 @@ func TestProductionRouteSettlement(t *testing.T) {
 	}
 	decisionID := srec.Header().Get("X-Decision-ID")
 	jobID := srec.Header().Get("X-Job-ID")
-
-	arm := "a"
+	// Settle the arm the decision actually selected: attribution rules
+	// reject any other single arm as forged.
+	arm := srec.Header().Get("X-Selected-Arm")
+	if arm == "" {
+		t.Fatal("missing X-Selected-Arm header")
+	}
 	body, _ := json.Marshal(map[string]any{
 		"schema_version": 1, "event_type": "JobSettled",
 		"decision_id": decisionID, "job_id": jobID, "strategy_id": "t2",
@@ -227,6 +231,12 @@ func TestBinaryBootsVerifiedAndSettles(t *testing.T) {
 	if decisionID == "" || jobID == "" {
 		t.Fatal("missing identity headers")
 	}
+	// Settle the arm the decision actually selected (attribution rules
+	// reject any other single arm as forged).
+	arm := sresp.Header.Get("X-Selected-Arm")
+	if arm == "" {
+		t.Fatal("missing X-Selected-Arm header")
+	}
 	// Public listener must not settle.
 	badSettle, _ := client.Post("http://127.0.0.1:"+pub+"/v1/outcomes", "application/json", strings.NewReader(`{}`))
 	badSettle.Body.Close()
@@ -234,8 +244,8 @@ func TestBinaryBootsVerifiedAndSettles(t *testing.T) {
 		t.Fatalf("public settle=%d want 404", badSettle.StatusCode)
 	}
 	// Internal listener settles with auth.
-	payload := fmt.Sprintf(`{"schema_version":1,"event_type":"JobSettled","decision_id":%q,"job_id":%q,"strategy_id":"t2","outcome_version":1,"supersedes":0,"status":"ACCEPTED","attempts":[{"attempt_id":"a1","seq":0,"executor_id":"a","arm_id":"a","transport":"ok","latency_ms":120,"validation":"pass","verified":"success"}],"deciding_attempt_id":"a1","occurred_at":"2026-09-27T00:00:00Z"}`,
-		decisionID, jobID)
+	payload := fmt.Sprintf(`{"schema_version":1,"event_type":"JobSettled","decision_id":%q,"job_id":%q,"strategy_id":"t2","outcome_version":1,"supersedes":0,"status":"ACCEPTED","attempts":[{"attempt_id":"a1","seq":0,"executor_id":%q,"arm_id":%q,"transport":"ok","latency_ms":120,"validation":"pass","verified":"success"}],"deciding_attempt_id":"a1","occurred_at":"2026-09-27T00:00:00Z"}`,
+		decisionID, jobID, arm, arm)
 	req, _ := http.NewRequest(http.MethodPost, "http://127.0.0.1:"+settle+"/v1/outcomes", strings.NewReader(payload))
 	req.Header.Set("Authorization", "Bearer s3cret")
 	sresp2, err := client.Do(req)
