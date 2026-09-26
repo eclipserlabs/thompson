@@ -22,6 +22,10 @@ type DecisionSnapshot struct {
 	// or posterior means when PhasedSelection forced the choice. Observability
 	// only — never a propensity source.
 	Scores map[string]float64
+	// Forced reports whether a PhasedSelection quota forced the choice instead
+	// of sampling. It determines the score kind (means vs samples) recorded
+	// in decision evidence.
+	Forced bool
 	// Posteriors maps every eligible arm to its posterior copy at selection
 	// time. Posteriors[Selected] is the posterior_before of this decision.
 	Posteriors map[string]Posterior
@@ -60,6 +64,7 @@ func (p *Policy) SelectSnapshot(rng *rand.Rand) (DecisionSnapshot, error) {
 		}
 		if id, ok := p.leastPulledBelowLocked(quota); ok {
 			snap.Selected = id
+			snap.Forced = true
 			for _, pid := range p.order {
 				snap.Scores[pid] = p.arms[pid].Posterior.Mean()
 			}
