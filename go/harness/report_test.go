@@ -194,7 +194,111 @@ func TestImmatureExcluded(t *testing.T) {
 	}
 }
 
-// Worst-case censoring flips a fragile win to INCONCLUSIVE.
+// Regression for commercial gate B: point relative improvement (0.57) clears
+// the 0.15 bar, but the bootstrap relative CI dips to ~0.025. Under the old
+// point-estimate rule this fixture read CONCLUSIVE_T2_WINS; the strict rule
+// (whole CI above the bar) must report INCONCLUSIVE.
+func TestStrictGateRegressionFixture(t *testing.T) {
+	at := fixtureBase
+	var as []Assignment
+	var evs []outcome.OutcomeEvent
+	for i, c := range []float64{1, 1, 3.9, 3.9} {
+		j := "g" + itoa(i)
+		as = append(as, fxAssign(j, "t2", at))
+		evs = append(evs, fxEvent(j, "t2", 1, outcome.StatusAccepted, []float64{c}, at))
+	}
+	for i := 0; i < 4; i++ {
+		j := "h" + itoa(i)
+		as = append(as, fxAssign(j, "t0", at))
+		evs = append(evs, fxEvent(j, "t0", 1, outcome.StatusAccepted, []float64{4.0}, at))
+	}
+	recs := MatureJobs(as, evs, at.Add(24*time.Hour), 24*time.Hour)
+	cfg := testCfg()
+	cfg.MinJobs = 4
+	cfg.CensorGate = 0.05
+	rep := Analyze(recs, cfg, "t0", "t2", nil, true, true)
+	if len(rep.Comparisons) != 1 {
+		t.Fatalf("comparisons=%d", len(rep.Comparisons))
+	}
+	c := rep.Comparisons[0]
+	if !c.Wins {
+		t.Fatalf("fixture must win on difference: %+v", c)
+	}
+	if c.RelImprovement < cfg.MinEffect {
+		t.Fatalf("point rel=%v must clear the bar (else fixture is wrong)", c.RelImprovement)
+	}
+	if c.RelCILow >= cfg.MinEffect {
+		t.Fatalf("rel CI low=%v clears the bar: fixture cannot discriminate", c.RelCILow)
+	}
+	if c.MeetsBar {
+		t.Fatal("strict gate passed on wide CI (gate B broken)")
+	}
+	if rep.Verdict != "INCONCLUSIVE" {
+		t.Fatalf("verdict=%s reasons=%v (want INCONCLUSIVE)", rep.Verdict, rep.Reasons)
+	}
+}
+
+// Observed variance sizes collection from measured jobs; the historical
+// contract carries provenance and rejects bad inputs.
+func TestObservedVarianceAndHistorical(t *testing.T) {
+	at := fixtureBase
+	as := []Assignment{fxAssign("j1", "t2", at), fxAssign("j2", "t2", at), fxAssign("j3", "t2", at), fxAssign("j4", "t2", at)}
+	evs := []outcome.OutcomeEvent{
+		fxEvent("j1", "t2", 1, outcome.StatusAccepted, []float64{1.0}, at),
+		fxEvent("j2", "t2", 1, outcome.StatusAccepted, []float64{2.0}, at),
+		fxEvent("j3", "t2", 1, outcome.StatusAccepted, []float64{3.0}, at),
+		fxEvent("j4", "t2", 1, outcome.StatusAccepted, []float64{4.0}, at),
+	}
+	recs := MatureJobs(as, evs, at.Add(24*time.Hour), 24*time.Hour)
+	mean, sd, n := ObservedVariance(recs, []string{"t2"})
+	if n != 4 || math.Abs(mean-2.5) > 1e-12 {
+		t.Fatalf("mean=%v n=%d", mean, n)
+	}
+	if math.Abs(sd-math.Sqrt(5.0/3.0)) > 1e-9 {
+		t.Fatalf("sd=%v want sqrt(5/3)", sd)
+	}
+	h := HistoricalSampleInput{Source: "assumption:charter", CollectedAt: "2026-01-01",
+		BaselineMean: 2.0, Stddev: 1.0, Alpha: 0.05, Power: 0.8, MinRelEffect: 0.25}
+	got, err := RequiredFromHistorical(h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if math.Abs(got-RequiredPerGroup(1.0, 2.0, 0.25, 0.05, 0.8)) > 1e-9 {
+		t.Fatal("historical wrapper diverges from formula")
+	}
+	bad := h
+	bad.Source = ""
+	if _, err := RequiredFromHistorical(bad); err == nil {
+		t.Fatal("sourceless input accepted")
+	}
+	bad = h
+	bad.Stddev = 0
+	if _, err := RequiredFromHistorical(bad); err == nil {
+		t.Fatal("zero-variance input accepted")
+	}
+}
+
+// The report carries labeled observed-variance sizing.
+func TestReportSampleSizeLabeled(t *testing.T) {
+	at := fixtureBase
+	var as []Assignment
+	var evs []outcome.OutcomeEvent
+	for i := 0; i < 3; i++ {
+		j2, j0 := "t2j"+itoa(i), "t0j"+itoa(i)
+		as = append(as, fxAssign(j2, "t2", at), fxAssign(j0, "t0", at))
+		evs = append(evs,
+			fxEvent(j2, "t2", 1, outcome.StatusAccepted, []float64{1.0}, at),
+			fxEvent(j0, "t0", 1, outcome.StatusAccepted, []float64{4.0}, at))
+	}
+	recs := MatureJobs(as, evs, at.Add(24*time.Hour), 24*time.Hour)
+	rep := Analyze(recs, testCfg(), "t0", "t2", nil, true, true)
+	if rep.SampleSize.Source != "synthetic-observed" {
+		t.Fatalf("source=%q (must be labeled)", rep.SampleSize.Source)
+	}
+	if n := rep.SampleSize.Entries["t2-t0"]; n <= 0 {
+		t.Fatalf("per-pair n=%v", n)
+	}
+}
 func TestWorstCaseCensoringFlips(t *testing.T) {
 	at := fixtureBase
 	var as []Assignment

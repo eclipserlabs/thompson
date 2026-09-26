@@ -328,6 +328,9 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("decision dispatch mark failed: %v", err), http.StatusInternalServerError)
 		return
 	}
+	// Verified-mode clients build attempt tapes from live executions and need
+	// the selected arm without re-reading the ledger.
+	w.Header().Set("X-Selected-Arm", chosen)
 	started := DecisionStarted{
 		SchemaVersion:           1,
 		EventType:               "DecisionStarted",

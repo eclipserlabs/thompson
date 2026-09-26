@@ -51,6 +51,7 @@ type JobRecord struct {
 
 // TreatmentStats is the per-treatment readout over matured jobs.
 type TreatmentStats struct {
+	// Assigned counts every randomized job (matured or not).
 	Assigned   int `json:"assigned"`
 	Matured    int `json:"matured"`
 	Accepted   int `json:"accepted"`
@@ -71,12 +72,17 @@ type TreatmentStats struct {
 }
 
 // Comparison is one treatment pair difference (candidate minus baseline).
+// MeetsBar is strict (commercial gate B): the whole relative-improvement
+// confidence interval must clear the pre-registered threshold, not merely
+// the point estimate with a CI above zero.
 type Comparison struct {
 	Pair           string  `json:"pair"`
 	Diff           float64 `json:"diff"`
 	RelImprovement float64 `json:"rel_improvement"`
 	CILow          float64 `json:"ci_low"`
 	CIHigh         float64 `json:"ci_high"`
+	RelCILow       float64 `json:"rel_ci_low"`
+	RelCIHigh      float64 `json:"rel_ci_high"`
 	Wins           bool    `json:"wins"`
 	MeetsBar       bool    `json:"meets_bar"`
 }
@@ -98,6 +104,14 @@ type Sensitivity struct {
 	CorrectionAsymmetry    string  `json:"correction_asymmetry"`
 }
 
+// SampleSizeAssessment sizes each comparison from observed dry-run
+// variance. Source labels provenance ("synthetic-observed" in dry runs);
+// it informs future collection and never amends the frozen charter.
+type SampleSizeAssessment struct {
+	Source  string             `json:"source"`
+	Entries map[string]float64 `json:"per_pair_n"`
+}
+
 // Report is the full experiment readout.
 type Report struct {
 	Maturation  string                    `json:"maturation"`
@@ -105,12 +119,15 @@ type Report struct {
 	Treatments  map[string]TreatmentStats `json:"treatments"`
 	Comparisons []Comparison              `json:"comparisons"`
 	Sensitivity Sensitivity               `json:"sensitivity"`
+	SampleSize  SampleSizeAssessment      `json:"sample_size"`
 	Gates       []GateResult              `json:"gates"`
 	Verdict     string                    `json:"verdict"`
 	Reasons     []string                  `json:"reasons"`
 }
 
 // LoadTreatmentDir reads one treatment's assignments + outcomes ledgers.
+// Absent files mean zero rows (a treatment may legitimately receive no
+// assignments); malformed lines are errors.
 func LoadTreatmentDir(dir string) ([]Assignment, []outcome.OutcomeEvent, error) {
 	assignments, err := loadAssignments(dir + "/assignments.jsonl")
 	if err != nil {
@@ -125,6 +142,9 @@ func LoadTreatmentDir(dir string) ([]Assignment, []outcome.OutcomeEvent, error) 
 
 func loadAssignments(path string) ([]Assignment, error) {
 	f, err := os.Open(path)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -148,6 +168,9 @@ func loadAssignments(path string) ([]Assignment, error) {
 
 func loadOutcomeEvents(path string) ([]outcome.OutcomeEvent, error) {
 	f, err := os.Open(path)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -177,12 +200,54 @@ func parseTime(s string) time.Time {
 	return t
 }
 
+// JobMap joins manifest job IDs to gateway job bindings
+// ("job-<first-decision>"). Multi-attempt jobs execute several decisions;
+// only the first decision's binding settles, so the map is many-to-one.
+type JobMap map[string]string
+
+// LoadJobMap reads dir/jobmap.jsonl (latest row per manifest job wins).
+// Absent file means identity mapping (legacy single-decision ledgers).
+func LoadJobMap(dir string) (JobMap, error) {
+	out := JobMap{}
+	f, err := os.Open(dir + "/jobmap.jsonl")
+	if os.IsNotExist(err) {
+		return out, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
+	for sc.Scan() {
+		line := sc.Bytes()
+		if len(line) == 0 {
+			continue
+		}
+		var row struct {
+			ManifestJob string `json:"manifest_job_id"`
+			GatewayJob  string `json:"gateway_job_id"`
+		}
+		if err := json.Unmarshal(line, &row); err != nil {
+			return nil, fmt.Errorf("harness: bad jobmap line: %w", err)
+		}
+		out[row.ManifestJob] = row.GatewayJob
+	}
+	return out, sc.Err()
+}
+
 // MatureJobs joins assignments to outcomes under a per-job maturation
 // window: a job assigned at t matures at t+window, evaluated against the
 // analysis clock now. The status used is the latest version verified at or
 // before the job's maturity instant; later versions only set
 // CorrectedAfter. Jobs maturing after now are excluded (not finalized).
 func MatureJobs(assignments []Assignment, events []outcome.OutcomeEvent, now time.Time, window time.Duration) []JobRecord {
+	return MatureJobsMapped(assignments, events, now, window, nil)
+}
+
+// MatureJobsMapped is MatureJobs with an explicit manifest→gateway join. A
+// nil map means identity (outcome JobIDs equal assignment JobIDs).
+func MatureJobsMapped(assignments []Assignment, events []outcome.OutcomeEvent, now time.Time, window time.Duration, jobMap JobMap) []JobRecord {
 	byJob := make(map[string][]outcome.OutcomeEvent)
 	for _, ev := range events {
 		byJob[ev.JobID] = append(byJob[ev.JobID], ev)
@@ -193,7 +258,20 @@ func MatureJobs(assignments []Assignment, events []outcome.OutcomeEvent, now tim
 		rec := JobRecord{JobID: a.JobID, Treatment: a.Treatment, Probability: a.Probability, AssignedAt: at}
 		maturesAt := at.Add(window)
 		rec.Matured = !maturesAt.After(now)
-		vers := byJob[a.JobID]
+		oid := a.JobID
+		if jobMap != nil {
+			if mapped, ok := jobMap[a.JobID]; ok {
+				oid = mapped
+			} else {
+				// Assigned but never executed far enough to map: unresolved
+				// unless an identity-keyed outcome exists (legacy ledgers).
+				if _, direct := byJob[a.JobID]; !direct {
+					out = append(out, rec)
+					continue
+				}
+			}
+		}
+		vers := byJob[oid]
 		rec.HasOutcome = len(vers) > 0
 		if !rec.Matured {
 			out = append(out, rec)
@@ -271,12 +349,18 @@ func Analyze(records []JobRecord, cfg ReportConfig, baseline, candidate string, 
 	}
 	names := append([]string{baseline, candidate}, others...)
 	seen := map[string]bool{}
+	assignedCount := map[string]int{}
+	for _, r := range records {
+		assignedCount[r.Treatment]++
+	}
 	for _, n := range names {
 		if seen[n] || n == "" {
 			continue
 		}
 		seen[n] = true
-		rep.Treatments[n] = summarize(byTx[n])
+		st := summarize(byTx[n])
+		st.Assigned = assignedCount[n]
+		rep.Treatments[n] = st
 	}
 
 	// Gates.
@@ -300,16 +384,19 @@ func Analyze(records []JobRecord, cfg ReportConfig, baseline, candidate string, 
 		cs, bs := byTx[p[0]], byTx[p[1]]
 		diff, rel := pairDiff(cs, bs)
 		lo, hi := bootstrapDiff(cs, bs, cfg.BootstrapN, cfg.BootstrapSeed)
+		rlo, rhi := bootstrapRel(cs, bs, cfg.BootstrapN, cfg.BootstrapSeed)
 		wins := !math.IsNaN(hi) && hi < 0
 		rep.Comparisons = append(rep.Comparisons, Comparison{
 			Pair: p[0] + "-" + p[1], Diff: diff, RelImprovement: rel,
-			CILow: lo, CIHigh: hi, Wins: wins, MeetsBar: wins && rel >= cfg.MinEffect,
+			CILow: lo, CIHigh: hi, RelCILow: rlo, RelCIHigh: rhi,
+			Wins: wins, MeetsBar: wins && !math.IsNaN(rlo) && rlo >= cfg.MinEffect,
 		})
 	}
 
 	rep.Sensitivity = sensitivities(byTx, cfg, baseline, candidate)
 	rep.Sensitivity.HalfMaturityStable = halfStable
 	rep.Sensitivity.DoubleMaturityStable = doubleStable
+	rep.SampleSize = assessSampleSize(byTx, cfg, pairs)
 
 	// Verdict.
 	rep.Verdict, rep.Reasons = verdict(rep, cfg, baseline, candidate)
@@ -430,6 +517,36 @@ func bootstrapDiff(candidate, baseline []JobRecord, n int, seed uint64) (float64
 	return percentile(diffs, 2.5), percentile(diffs, 97.5)
 }
 
+// bootstrapRel resamples jobs and returns the 2.5/97.5 percentiles of the
+// relative improvement (pb-pc)/pb. Resamples with no baseline success carry
+// no information and are skipped.
+func bootstrapRel(candidate, baseline []JobRecord, n int, seed uint64) (float64, float64) {
+	if n <= 0 || len(candidate) == 0 || len(baseline) == 0 {
+		return math.NaN(), math.NaN()
+	}
+	rng := rand.New(rand.NewPCG(seed, seed>>1))
+	rels := make([]float64, 0, n)
+	for b := 0; b < n; b++ {
+		rc := make([]JobRecord, len(candidate))
+		for i := range rc {
+			rc[i] = candidate[rng.IntN(len(candidate))]
+		}
+		rb := make([]JobRecord, len(baseline))
+		for i := range rb {
+			rb[i] = baseline[rng.IntN(len(baseline))]
+		}
+		_, rel := pairDiff(rc, rb)
+		if !math.IsNaN(rel) {
+			rels = append(rels, rel)
+		}
+	}
+	if len(rels) == 0 {
+		return math.NaN(), math.NaN()
+	}
+	sort.Float64s(rels)
+	return percentile(rels, 2.5), percentile(rels, 97.5)
+}
+
 func percentile(sorted []float64, p float64) float64 {
 	if len(sorted) == 0 {
 		return math.NaN()
@@ -441,6 +558,43 @@ func percentile(sorted []float64, p float64) float64 {
 		return sorted[lo]
 	}
 	return sorted[lo] + (sorted[hi]-sorted[lo])*(rank-float64(lo))
+}
+
+// assessSampleSize sizes each pair from observed pooled variance. The
+// source label travels with the numbers so synthetic dry-run sizing can
+// never be mistaken for customer-data sizing.
+func assessSampleSize(byTx map[string][]JobRecord, cfg ReportConfig, pairs [][2]string) SampleSizeAssessment {
+	out := SampleSizeAssessment{Source: "synthetic-observed", Entries: map[string]float64{}}
+	for _, p := range pairs {
+		var costs []float64
+		for _, r := range append(append([]JobRecord(nil), byTx[p[0]]...), byTx[p[1]]...) {
+			if r.Matured && r.HasOutcome && r.FullyMetered {
+				costs = append(costs, r.CostMetered)
+			}
+		}
+		n := float64(len(costs))
+		if n < 2 {
+			out.Entries[p[0]+"-"+p[1]] = 0
+			continue
+		}
+		mean := 0.0
+		for _, c := range costs {
+			mean += c
+		}
+		mean /= n
+		v := 0.0
+		for _, c := range costs {
+			v += (c - mean) * (c - mean)
+		}
+		sd := math.Sqrt(v / (n - 1))
+		base := primaryOf(byTx[p[1]])
+		if math.IsNaN(base) || base <= 0 {
+			out.Entries[p[0]+"-"+p[1]] = 0
+			continue
+		}
+		out.Entries[p[0]+"-"+p[1]] = RequiredPerGroup(sd, base, cfg.MinEffect, 0.05, 0.8)
+	}
+	return out
 }
 
 func sensitivities(byTx map[string][]JobRecord, cfg ReportConfig, baseline, candidate string) Sensitivity {
@@ -538,12 +692,22 @@ func correctionTally(byTx map[string][]JobRecord) string {
 
 // MaturityStability recomputes the winner at half/double maturation windows.
 // A window is stable when its winner equals the base winner.
-func MaturityStability(baseWinner string, assignments []Assignment, events []outcome.OutcomeEvent, now time.Time, window time.Duration, treatments []string) (halfStable, doubleStable bool) {
+func MaturityStability(baseWinner string, assignments []Assignment, events []outcome.OutcomeEvent, now time.Time, window time.Duration, treatments []string, jobMaps map[string]JobMap) (halfStable, doubleStable bool) {
 	winner := func(w time.Duration) string {
 		byTx := map[string][]JobRecord{}
-		for _, r := range MatureJobs(assignments, events, now, w) {
-			if r.Matured {
-				byTx[r.Treatment] = append(byTx[r.Treatment], r)
+		byTxAssign := map[string][]Assignment{}
+		for _, a := range assignments {
+			byTxAssign[a.Treatment] = append(byTxAssign[a.Treatment], a)
+		}
+		byTxEvents := map[string][]outcome.OutcomeEvent{}
+		for _, ev := range events {
+			byTxEvents[ev.StrategyID] = append(byTxEvents[ev.StrategyID], ev)
+		}
+		for _, n := range treatments {
+			for _, r := range MatureJobsMapped(byTxAssign[n], byTxEvents[n], now, w, jobMaps[n]) {
+				if r.Matured {
+					byTx[r.Treatment] = append(byTx[r.Treatment], r)
+				}
 			}
 		}
 		best, bestP := "", math.Inf(1)
@@ -597,4 +761,69 @@ func verdict(rep Report, cfg ReportConfig, baseline, candidate string) (string, 
 		return "INCONCLUSIVE", append(reasons, "win below commercial bar")
 	}
 	return "CONCLUSIVE_T2_WINS", append(reasons, "all gates, floor, bar and sensitivities hold")
+}
+
+// NotReadyError signals not-ready data (immature window, empty input).
+// Callers map it to a distinct exit status.
+type NotReadyError struct{ Reason string }
+
+func (e *NotReadyError) Error() string { return "analysis refused: " + e.Reason }
+
+// BuildReport enforces readiness (every assigned job matured under the
+// common window) and analyzes. jobMaps carries each treatment's
+// manifest→gateway join (nil map per treatment means identity). It is shared
+// by the exp-report CLI and the exp-run dry-run writer so the two can never
+// disagree.
+func BuildReport(allAssign []Assignment, allEvents []outcome.OutcomeEvent, txNames []string, baseline, candidate string, others []string, cfg ReportConfig, jobMaps map[string]JobMap) (Report, error) {
+	if len(allAssign) == 0 {
+		return Report{}, &NotReadyError{"no assigned jobs"}
+	}
+
+	// Do not finalize until the final assigned job has matured.
+	latest := allAssign[0].AssignedAt
+	for _, a := range allAssign[1:] {
+		if a.AssignedAt > latest {
+			latest = a.AssignedAt
+		}
+	}
+	lastAssigned, err := time.Parse(time.RFC3339Nano, latest)
+	if err != nil {
+		return Report{}, fmt.Errorf("harness: bad assigned_at: %w", err)
+	}
+	if cfg.Now.Before(lastAssigned.Add(cfg.Maturation)) {
+		return Report{}, &NotReadyError{fmt.Sprintf("final job assigned %s matures at %s (now %s)",
+			lastAssigned.Format(time.RFC3339), lastAssigned.Add(cfg.Maturation).Format(time.RFC3339),
+			cfg.Now.Format(time.RFC3339))}
+	}
+
+	records := MatureJobs(allAssign, allEvents, cfg.Now, cfg.Maturation)
+	_ = records
+	// Per-treatment maturity with joins (assignments and events are flat
+	// across treatments; split them first).
+	byTxAssign := map[string][]Assignment{}
+	for _, a := range allAssign {
+		byTxAssign[a.Treatment] = append(byTxAssign[a.Treatment], a)
+	}
+	byTxEvents := map[string][]outcome.OutcomeEvent{}
+	for _, ev := range allEvents {
+		byTxEvents[ev.StrategyID] = append(byTxEvents[ev.StrategyID], ev)
+	}
+	records = nil
+	for _, n := range txNames {
+		records = append(records, MatureJobsMapped(byTxAssign[n], byTxEvents[n], cfg.Now, cfg.Maturation, jobMaps[n])...)
+	}
+	byTx := map[string][]JobRecord{}
+	for _, r := range records {
+		if r.Matured {
+			byTx[r.Treatment] = append(byTx[r.Treatment], r)
+		}
+	}
+	baseWinner, bestP := "", math.Inf(1)
+	for _, n := range txNames {
+		if p := primaryOf(byTx[n]); !math.IsNaN(p) && p < bestP {
+			baseWinner, bestP = n, p
+		}
+	}
+	half, dbl := MaturityStability(baseWinner, allAssign, allEvents, cfg.Now, cfg.Maturation, txNames, jobMaps)
+	return Analyze(records, cfg, baseline, candidate, others, half, dbl), nil
 }

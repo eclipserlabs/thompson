@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
+	"time"
 )
 
 // ProviderOutcome is the measured result of executing against one arm.
@@ -188,6 +190,21 @@ func (f *FakeProvider) ID() string { return f.id }
 func (f *FakeProvider) Invoke(ctx context.Context, r *http.Request) (ProviderOutcome, error) {
 	if f.err != nil {
 		return ProviderOutcome{Success: false, StatusCode: f.statusCode}, f.err
+	}
+	// Dry-run/test instrumentation ONLY: FakeProvider honors X-Fake-Delay-Ms
+	// (capped) to simulate slow providers deterministically through the real
+	// HTTP path. Real providers (HTTPProvider) never read this header.
+	if v := r.Header.Get("X-Fake-Delay-Ms"); v != "" {
+		if ms, err := strconv.Atoi(v); err == nil && ms > 0 {
+			if ms > 30000 {
+				ms = 30000
+			}
+			select {
+			case <-time.After(time.Duration(ms) * time.Millisecond):
+			case <-ctx.Done():
+				return ProviderOutcome{Success: false, StatusCode: 200}, ctx.Err()
+			}
+		}
 	}
 	success := f.statusCode >= 200 && f.statusCode < 300
 	if f.success != nil {

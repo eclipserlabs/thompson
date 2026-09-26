@@ -41,6 +41,14 @@ func (BinaryStatusMapper) MapReward(ev OutcomeEvent) (float64, bool) {
 	}
 }
 
+// NoopMapper never moves the policy. Static treatments (T0/T1) run the full
+// verified decision + settlement machinery for accounting while learning
+// nothing: their behavior stays fixed by construction. Additive only; the
+// binary mapping and the update math are untouched.
+type NoopMapper struct{}
+
+func (NoopMapper) MapReward(ev OutcomeEvent) (float64, bool) { return 0, false }
+
 // rngFor derives a deterministic RNG stream per (job, version). Bernoulli
 // updates consume randomness, so replaying the same event must flip the same
 // coin: seeding from the event identity (not from a shared stream position)
