@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -127,6 +128,36 @@ func TestMemoryStoreOrderingAndIdempotency(t *testing.T) {
 	evs := s.Events()
 	if len(evs) != 2 || evs[0].Seq != 1 || evs[1].Seq != 2 {
 		t.Fatalf("bad seq order: %+v", evs)
+	}
+}
+
+func TestFileStoreCorruptMidFileRejected(t *testing.T) {
+	// Terminated garbage before valid history is corruption: the open must
+	// fail rather than truncate the valid suffix as a "torn tail".
+	path := filepath.Join(t.TempDir(), "outcomes.jsonl")
+	s, err := NewFileOutcomeStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Submit(settledJob("j1", "d1", "a", StatusAccepted, 1)); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = f.WriteString("NOT-JSON\n")
+	_ = f.Close()
+	if _, err := NewFileOutcomeStore(path); err == nil {
+		t.Fatal("corrupt ledger opened without error")
+	}
+	// Suffix history is intact on disk for operator recovery.
+	raw, _ := os.ReadFile(path)
+	if !strings.Contains(string(raw), `"job_id":"j1"`) {
+		t.Fatal("valid prefix damaged")
 	}
 }
 

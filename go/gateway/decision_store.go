@@ -133,7 +133,12 @@ type DecisionExecution struct {
 	Transport  string         `json:"transport,omitempty"`
 	LatencyMs  *float64       `json:"latency_ms,omitempty"`
 	OccurredAt string         `json:"occurred_at"`
-	Seq        uint64         `json:"seq"`
+	// N is the per-decision marker number (1, 2, … in commit order for this
+	// decision), assigned by the store. It is independent of the decision
+	// ledger Seq: execution markers never share the decision version
+	// namespace. Files written before per-decision numbering carry "seq"
+	// instead, which recovery ignores while assigning N in encounter order.
+	N uint64 `json:"n"`
 }
 
 func (e DecisionExecution) Validate() error {
@@ -230,7 +235,11 @@ func (s *MemoryDecisionStore) MarkExecution(e DecisionExecution) error {
 	if _, ok := s.byID[e.DecisionID]; !ok {
 		return fmt.Errorf("decision: cannot mark uncommitted decision %q", e.DecisionID)
 	}
-	e.Seq = uint64(len(s.decisions) + len(s.executions) + 1)
+	if cur, ok := s.executions[e.DecisionID]; ok {
+		e.N = cur.N + 1
+	} else {
+		e.N = 1
+	}
 	s.executions[e.DecisionID] = e
 	return nil
 }
@@ -342,7 +351,6 @@ func (s *FileDecisionStore) recover() error {
 	buf := make([]byte, 0, 64*1024)
 	scanner.Buffer(buf, 10*1024*1024)
 	var lineStart int64
-	tornAt := int64(-1)
 	index := func(rec decisionRecord) error {
 		switch rec.Type {
 		case "committed":
@@ -373,7 +381,11 @@ func (s *FileDecisionStore) recover() error {
 			if _, ok := s.byID[e.DecisionID]; !ok {
 				return fmt.Errorf("decision: execution marker for uncommitted %q", e.DecisionID)
 			}
-			e.Seq = uint64(len(s.decisions) + len(s.executions) + 1)
+			if cur, ok := s.executions[e.DecisionID]; ok {
+				e.N = cur.N + 1
+			} else {
+				e.N = 1
+			}
 			s.executions[e.DecisionID] = e
 		default:
 			return fmt.Errorf("decision: unknown record type %q", rec.Type)
@@ -388,8 +400,11 @@ func (s *FileDecisionStore) recover() error {
 		}
 		var rec decisionRecord
 		if err := json.Unmarshal(line, &rec); err != nil {
-			tornAt = lineStart
-			break
+			// Every scanned line is newline-terminated here (the
+			// unterminated tail was already truncated above), so a parse
+			// failure is corruption, not a crash tear: fail loudly rather
+			// than truncating valid history that follows.
+			return fmt.Errorf("decision: ledger %s has corrupt line at ~offset %d: %w", s.path, lineStart, err)
 		}
 		if err := index(rec); err != nil {
 			return fmt.Errorf("decision: ledger %s at ~offset %d: %w", s.path, lineStart, err)
@@ -397,19 +412,12 @@ func (s *FileDecisionStore) recover() error {
 		lineStart += int64(len(line)) + 1
 	}
 	if err := scanner.Err(); err != nil {
-		tornAt = lineStart
+		return fmt.Errorf("decision: ledger %s scan failed at ~offset %d: %w", s.path, lineStart, err)
 	}
-	if tornAt >= 0 {
-		if err := s.file.Truncate(tornAt); err != nil {
-			return fmt.Errorf("decision: truncate torn tail %s: %w", s.path, err)
-		}
-		if _, err := s.file.Seek(0, 2); err != nil {
-			return fmt.Errorf("decision: seek end %s: %w", s.path, err)
-		}
-		if err := s.file.Sync(); err != nil {
-			return fmt.Errorf("decision: sync %s: %w", s.path, err)
-		}
-		s.tornTail = true
+	// Only the unterminated tail (handled above) is ever truncated: every
+	// line scanned here was newline-terminated, hence committed.
+	if _, err := s.file.Seek(0, 2); err != nil {
+		return fmt.Errorf("decision: seek end %s: %w", s.path, err)
 	}
 	return nil
 }
@@ -454,7 +462,11 @@ func (s *FileDecisionStore) MarkExecution(e DecisionExecution) error {
 	if _, ok := s.byID[e.DecisionID]; !ok {
 		return fmt.Errorf("decision: cannot mark uncommitted decision %q", e.DecisionID)
 	}
-	e.Seq = uint64(len(s.decisions) + len(s.executions) + 1)
+	if cur, ok := s.executions[e.DecisionID]; ok {
+		e.N = cur.N + 1
+	} else {
+		e.N = 1
+	}
 	if err := s.appendRecord(decisionRecord{Type: "execution", Execution: &e}); err != nil {
 		return err
 	}
