@@ -60,6 +60,9 @@ type DecisionStarted struct {
 	// Bandit log record fields for OPE
 	LoggingPolicyID       string `json:"logging_policy_id,omitempty"`
 	LoggingPolicyConfigHash string `json:"logging_policy_config_hash,omitempty"`
+	// Job binding for verified settlement (additive; absent in pre-PR3A rows).
+	JobID      string `json:"job_id,omitempty"`
+	StrategyID string `json:"strategy_id,omitempty"`
 	// Shadow V0 additions (omitempty for backward compat with V0 readers)
 	ExternalRequestID *string `json:"external_request_id,omitempty"`
 	ShadowEligible    bool    `json:"shadow_eligible"`
