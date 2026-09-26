@@ -205,7 +205,6 @@ func (s *FileOutcomeStore) recover() error {
 	buf := make([]byte, 0, 64*1024)
 	scanner.Buffer(buf, 10*1024*1024)
 	var lineStart int64
-	tornAt := int64(-1)
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		if len(line) == 0 {
@@ -214,8 +213,11 @@ func (s *FileOutcomeStore) recover() error {
 		}
 		var ev OutcomeEvent
 		if err := json.Unmarshal(line, &ev); err != nil {
-			tornAt = lineStart
-			break
+			// Every scanned line is newline-terminated here (the
+			// unterminated tail was already truncated above), so a parse
+			// failure is corruption, not a crash tear: fail loudly rather
+			// than truncating valid history that follows.
+			return fmt.Errorf("outcome: ledger %s has corrupt line at ~offset %d: %w", s.path, lineStart, err)
 		}
 		if err := ev.Validate(); err != nil {
 			return fmt.Errorf("outcome: ledger %s holds invalid event at ~offset %d: %w", s.path, lineStart, err)
@@ -228,20 +230,11 @@ func (s *FileOutcomeStore) recover() error {
 		lineStart += int64(len(line)) + 1 // + newline
 	}
 	if err := scanner.Err(); err != nil {
-		// bufio.ErrTooLong or I/O: a torn tail, not a valid prefix break.
-		tornAt = lineStart
+		return fmt.Errorf("outcome: ledger %s scan failed at ~offset %d: %w", s.path, lineStart, err)
 	}
-	if tornAt >= 0 {
-		if err := s.file.Truncate(tornAt); err != nil {
-			return fmt.Errorf("outcome: truncate torn tail %s: %w", s.path, err)
-		}
-		if _, err := s.file.Seek(0, 2); err != nil {
-			return fmt.Errorf("outcome: seek end %s: %w", s.path, err)
-		}
-		if err := s.file.Sync(); err != nil {
-			return fmt.Errorf("outcome: sync %s: %w", s.path, err)
-		}
-		s.tornTail = true
+	// Only the unterminated tail (handled above) is ever truncated.
+	if _, err := s.file.Seek(0, 2); err != nil {
+		return fmt.Errorf("outcome: seek end %s: %w", s.path, err)
 	}
 	return nil
 }

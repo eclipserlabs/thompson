@@ -30,15 +30,6 @@ Thompson is not a replacement for your application, your validators, or your exi
 
 ## How it works
 
-```mermaid
-flowchart TD
-    A["Select an execution strategy"] --> B["Persist the decision and its evidence"]
-    B --> C["Execute the selected strategy"]
-    C --> D["Receive an independently verified outcome"]
-    D --> E["Persist, settle, and learn"]
-    E --> F["Improve subsequent decisions"]
-```
-
 A decision records the selected arm, eligible alternatives, policy identity, and the policy state used for selection.
 
 An outcome describes the result of the job rather than merely the transport response. Outcomes can arrive late, remain unknown, or be corrected after further verification.

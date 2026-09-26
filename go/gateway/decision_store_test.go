@@ -1,8 +1,10 @@
 package gateway
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/wiramahendra/thompson-sampling/go/thompson"
@@ -74,6 +76,137 @@ func TestDecisionStoreCommitLookupConflict(t *testing.T) {
 	e, ok := s.Execution("d1")
 	if !ok || e.Phase != PhaseObserved || e.Transport != "ok" {
 		t.Fatalf("latest marker wrong: %+v", e)
+	}
+	if e.N != 2 {
+		t.Fatalf("observed marker N=%d want 2 (dispatched was 1)", e.N)
+	}
+}
+
+func TestExecutionNumberingAcrossRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "decisions.jsonl")
+	s, err := NewFileDecisionStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mk := func(id string) CommittedDecision {
+		d := testCommittedDecision(id)
+		return d
+	}
+	if _, _, err := s.Commit(mk("d1")); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.Commit(mk("d2")); err != nil {
+		t.Fatal(err)
+	}
+	mark := func(id string, phase ExecutionPhase, wantN uint64) {
+		t.Helper()
+		if err := s.MarkExecution(DecisionExecution{DecisionID: id, Phase: phase}); err != nil {
+			t.Fatal(err)
+		}
+		e, _ := s.Execution(id)
+		if e.N != wantN {
+			t.Fatalf("%s/%s N=%d want %d", id, phase, e.N, wantN)
+		}
+	}
+	mark("d1", PhaseDispatched, 1)
+	mark("d1", PhaseObserved, 2)
+	mark("d2", PhaseDispatched, 1)
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	r, err := NewFileDecisionStore(path)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	defer r.Close()
+	if e, _ := r.Execution("d1"); e.N != 2 || e.Phase != PhaseObserved {
+		t.Fatalf("d1 marker wrong after restart: %+v", e)
+	}
+	if e, _ := r.Execution("d2"); e.N != 1 {
+		t.Fatalf("d2 marker wrong after restart: %+v", e)
+	}
+	// Numbering continues, it does not restart.
+	if err := r.MarkExecution(DecisionExecution{DecisionID: "d1", Phase: PhaseUnknown}); err != nil {
+		t.Fatal(err)
+	}
+	if e, _ := r.Execution("d1"); e.N != 3 {
+		t.Fatalf("post-restart N=%d want 3", e.N)
+	}
+}
+
+// Old files carry execution markers with "seq" and no "n": recovery must
+// ignore the legacy field and assign per-decision N in encounter order.
+func TestOldFormatExecutionRecovery(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "decisions.jsonl")
+	var buf strings.Builder
+	writeLine := func(v any) {
+		b, err := json.Marshal(v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		buf.Write(b)
+		buf.WriteByte('\n')
+	}
+	d1 := testCommittedDecision("d1")
+	d1.Seq = 1
+	writeLine(map[string]any{"type": "committed", "committed": d1})
+	writeLine(map[string]any{"type": "execution", "execution": map[string]any{
+		"decision_id": "d1", "phase": "dispatched", "seq": 7, "occurred_at": "2026-09-27T00:00:01Z"}})
+	writeLine(map[string]any{"type": "execution", "execution": map[string]any{
+		"decision_id": "d1", "phase": "observed", "seq": 8, "occurred_at": "2026-09-27T00:00:02Z"}})
+	if err := os.WriteFile(path, []byte(buf.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := NewFileDecisionStore(path)
+	if err != nil {
+		t.Fatalf("old format rejected: %v", err)
+	}
+	defer s.Close()
+	e, ok := s.Execution("d1")
+	if !ok || e.N != 2 || e.Phase != PhaseObserved {
+		t.Fatalf("legacy markers misnumbered: %+v", e)
+	}
+	if _, ok := s.Lookup("d1"); !ok {
+		t.Fatal("committed decision lost")
+	}
+}
+
+func TestMalformedLedgerRejected(t *testing.T) {
+	// Terminated garbage is corruption, not a crash tear: the open fails
+	// rather than truncating valid history that follows.
+	valid := testCommittedDecision("d9")
+	vb, _ := json.Marshal(map[string]any{"type": "committed", "committed": valid})
+	cases := map[string]string{
+		"garbage line":      "NOT-JSON\n" + string(vb) + "\n",
+		"unknown type":      "{\"type\":\"nope\"}\n",
+		"execution unknown": "{\"type\":\"execution\",\"execution\":{\"decision_id\":\"ghost\",\"phase\":\"dispatched\"}}\n",
+	}
+	for name, content := range cases {
+		path := filepath.Join(t.TempDir(), "d.jsonl")
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := NewFileDecisionStore(path); err == nil {
+			t.Fatalf("%s: malformed ledger opened without error", name)
+		}
+	}
+	// Conflicting committed content for one ID is rejected.
+	path := filepath.Join(t.TempDir(), "d.jsonl")
+	d1 := testCommittedDecision("d1")
+	d2 := d1
+	d2.SelectedArmID = "b"
+	var buf strings.Builder
+	for _, d := range []CommittedDecision{d1, d2} {
+		b, _ := json.Marshal(map[string]any{"type": "committed", "committed": d})
+		buf.Write(b)
+		buf.WriteByte('\n')
+	}
+	if err := os.WriteFile(path, []byte(buf.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewFileDecisionStore(path); err == nil {
+		t.Fatal("conflicting ledger opened without error")
 	}
 }
 
