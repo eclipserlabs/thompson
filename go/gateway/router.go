@@ -233,6 +233,8 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		p := snap.Posteriors[id]
 		eligibleState = append(eligibleState, EligibleArmState{ArmID: id, Alpha: p.Alpha, Beta: p.Beta, Pulls: p.Pulls})
 	}
+	// LoggingPolicyID is derived from the live configuration, never hardcoded
+	// (audit A3): only exact-Thompson passes the OPE reliability gate.
 	started := DecisionStarted{
 		SchemaVersion:           1,
 		EventType:               "DecisionStarted",
@@ -244,7 +246,7 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		PolicyConfigHash:        configHash,
 		PosteriorBefore:         snapshotFrom(postBefore),
 		EligibleArmState:        eligibleState,
-		LoggingPolicyID:         "exact-thompson-v1",
+		LoggingPolicyID:         rt.policy.LoggingPolicyID(),
 		LoggingPolicyConfigHash: configHash,
 		ExternalRequestID:       externalID,
 		ShadowEligible:          shadowEligible,
@@ -381,7 +383,7 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			_ = rt.writer.WriteShadowSkipped(ShadowSkipped{
 				SchemaVersion: 1, EventType: "ShadowSkipped", DecisionID: canonicalID, OccurredAt: nowRFC3339Nano(),
 				IntendedShadowArmID: shadowArmID, Reason: "CONCURRENCY_BUDGET",
-				PrimaryLoggingPolicyID: "thompson-v1", PrimaryLoggingPolicyConfigHash: configHash,
+				PrimaryLoggingPolicyID: rt.policy.LoggingPolicyID(), PrimaryLoggingPolicyConfigHash: configHash,
 				ShadowSelectionPolicyID: "uniform-non-primary-v1", ShadowSelectionProbability: &p,
 				EligibleArmCount: eligibleCount, ShadowCandidateCount: shadowCandidateCount,
 			})
@@ -398,7 +400,7 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					_ = rt.writer.WriteShadowSkipped(ShadowSkipped{
 						SchemaVersion: 1, EventType: "ShadowSkipped", DecisionID: canonicalID, OccurredAt: nowRFC3339Nano(),
 						IntendedShadowArmID: shadowArmID, Reason: "PROVIDER_UNAVAILABLE",
-						PrimaryLoggingPolicyID: "thompson-v1", PrimaryLoggingPolicyConfigHash: configHash,
+						PrimaryLoggingPolicyID: rt.policy.LoggingPolicyID(), PrimaryLoggingPolicyConfigHash: configHash,
 						ShadowSelectionPolicyID: "uniform-non-primary-v1", ShadowSelectionProbability: &p,
 						EligibleArmCount: eligibleCount, ShadowCandidateCount: shadowCandidateCount,
 					})
@@ -430,7 +432,7 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					ArmID: *shadowArmID, PrimaryArmID: chosen, LatencyMs: sLatency, Success: sSuccess,
 					InputTokens: sOutcome.InputTokens, OutputTokens: sOutcome.OutputTokens, CostUSD: sOutcome.CostUSD,
 					ComputedReward: sReward,
-					PrimaryLoggingPolicyID: "thompson-v1", PrimaryLoggingPolicyConfigHash: configHash,
+					PrimaryLoggingPolicyID: rt.policy.LoggingPolicyID(), PrimaryLoggingPolicyConfigHash: configHash,
 					ShadowSelectionPolicyID: "uniform-non-primary-v1", ShadowSelectionProbability: prob,
 					EligibleArmCount: eligibleCount, ShadowCandidateCount: shadowCandidateCount,
 				}
@@ -453,7 +455,7 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = rt.writer.WriteShadowSkipped(ShadowSkipped{
 			SchemaVersion: 1, EventType: "ShadowSkipped", DecisionID: canonicalID, OccurredAt: nowRFC3339Nano(),
 			IntendedShadowArmID: intended, Reason: shadowReason,
-			PrimaryLoggingPolicyID: "thompson-v1", PrimaryLoggingPolicyConfigHash: configHash,
+			PrimaryLoggingPolicyID: rt.policy.LoggingPolicyID(), PrimaryLoggingPolicyConfigHash: configHash,
 			ShadowSelectionPolicyID: "uniform-non-primary-v1", ShadowSelectionProbability: probPtr,
 			EligibleArmCount: eligibleCount, ShadowCandidateCount: shadowCandidateCount,
 		})

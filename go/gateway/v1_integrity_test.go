@@ -216,8 +216,13 @@ func TestUniformShadowProbabilityPersisted(t *testing.T) {
 		if mem.Shadow[0].ShadowSelectionPolicyID != "uniform-non-primary-v1" {
 			t.Fatalf("policy id")
 		}
-		if mem.Shadow[0].PrimaryLoggingPolicyID != "thompson-v1" {
-			t.Fatalf("primary policy id")
+		if mem.Shadow[0].PrimaryLoggingPolicyID != policy.LoggingPolicyID() {
+			t.Fatalf("primary policy id: got %q want derived %q",
+				mem.Shadow[0].PrimaryLoggingPolicyID, policy.LoggingPolicyID())
+		}
+		if mem.Shadow[0].PrimaryLoggingPolicyID != mem.Started[0].LoggingPolicyID {
+			t.Fatalf("live/shadow policy identity diverged: %q vs %q",
+				mem.Started[0].LoggingPolicyID, mem.Shadow[0].PrimaryLoggingPolicyID)
 		}
 	}
 }
