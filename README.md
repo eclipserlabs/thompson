@@ -1,5 +1,10 @@
 # Thompson
 
+[![Rust 1.75+](https://img.shields.io/badge/Rust-1.75%2B-dea584?logo=rust)](https://www.rust-lang.org/)
+[![Go 1.22+](https://img.shields.io/badge/Go-1.22%2B-00ADD8?logo=go)](https://go.dev/)
+[![Protocol v1](https://img.shields.io/badge/wire%20protocol-v1-5b5bd6)](protocol/SPEC.md)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE-MIT)
+
 **Adaptive execution decisions backed by verifiable outcomes.**
 
 Thompson is an open-source adaptive selection engine for applications that repeatedly choose between models, providers, or execution strategies. It uses Thompson Sampling to learn from observed outcomes and improve future decisions.
@@ -25,22 +30,24 @@ Thompson is not a replacement for your application, your validators, or your exi
 
 ## How it works
 
-    Select an execution strategy
-                |
-                v
-    Persist the decision and its evidence
-                |
-                v
-    Execute the selected strategy
-                |
-                v
-    Receive an independently verified outcome
-                |
-                v
-    Persist, settle, and learn
-                |
-                v
-    Improve subsequent decisions
+```text
+Select an execution strategy
+            |
+            v
+Persist the decision and its evidence
+            |
+            v
+Execute the selected strategy
+            |
+            v
+Receive an independently verified outcome
+            |
+            v
+Persist, settle, and learn
+            |
+            v
+Improve subsequent decisions
+```
 
 A decision records the selected arm, eligible alternatives, policy identity, and the policy state used for selection.
 
@@ -89,16 +96,22 @@ No production savings are claimed.
 
 Run the existing tests:
 
-    cargo test --workspace
-    cd go && go test -race ./...
+```sh
+cargo test --workspace
+cd go && go test -race ./...
+```
+
+The `-race` check matters because the Go policy and gateway serve concurrent HTTP handlers.
 
 ### Rust policy
 
-The Rust library can be embedded directly into an application. The caller selects an arm, executes the corresponding work, and reports the observed outcome.
+The Rust library can be embedded directly into an application. The caller selects an arm, executes the corresponding work, and reports the observed outcome. Add `thompson-sampling` plus `rand` with the `small_rng` feature to your dependencies, then:
 
-    use rand::{rngs::SmallRng, SeedableRng};
-    use thompson_sampling::{Outcome, ThompsonSampling};
+```rust
+use rand::{rngs::SmallRng, SeedableRng};
+use thompson_sampling::{Outcome, ThompsonSampling};
 
+fn main() {
     let mut rng = SmallRng::seed_from_u64(42);
 
     let mut policy = ThompsonSampling::with_defaults([
@@ -117,6 +130,8 @@ The Rust library can be embedded directly into an application. The caller select
     policy
         .record_outcome(&mut rng, &selected, &outcome)
         .expect("selected arm is registered");
+}
+```
 
 This demonstrates the policy library, not the Go gateway's durable verified-outcome contract. Applications must define trustworthy outcome signals appropriate to their workload.
 
@@ -124,10 +139,17 @@ This demonstrates the policy library, not the Go gateway's durable verified-outc
 
 For local development:
 
-    cd go
-    EVIDENCE_PATH=./evidence.jsonl go run ./router
+```sh
+cd go
+EVIDENCE_PATH=./evidence.jsonl go run ./router
+```
 
-Without configured provider URLs, the gateway uses its fake providers for local verification. Fake-provider results are not evidence of model quality or production performance.
+Without configured provider URLs, the gateway uses its fake providers for local verification. Fake-provider results are not evidence of model quality or production performance. Verify it is up and routing:
+
+```sh
+curl http://localhost:8080/health
+curl -X POST http://localhost:8080/v1/chat/completions -d '{"model":"local-check"}'
+```
 
 The executable's default mode remains legacy transport-based learning. Consult the verified-mode operational documentation before integrating the separate durable settlement path.
 
@@ -139,10 +161,12 @@ Thompson records decision evidence for reproducibility and offline policy evalua
 
 The existing tools support evidence analysis, IPS/SNIPS evaluation, and propensity validation:
 
-    cd go
-    go run ./cmd/analyze --evidence ./evidence.jsonl
-    go run ./cmd/evaluate --evidence ./evidence.jsonl --policy uniform-v1 --propensity reference
-    go run ./cmd/propensity-audit --evidence ./evidence.jsonl
+```sh
+cd go
+go run ./cmd/analyze --evidence ./evidence.jsonl
+go run ./cmd/evaluate --evidence ./evidence.jsonl --policy uniform-v1 --propensity reference
+go run ./cmd/propensity-audit --evidence ./evidence.jsonl
+```
 
 Offline comparisons require adequate overlap and sufficiently accurate action probabilities. The evaluation tools explicitly distinguish unsupported or statistically unreliable comparisons.
 
