@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/wiramahendra/thompson-sampling/go/outcome"
 	"github.com/wiramahendra/thompson-sampling/go/thompson"
 )
 
@@ -27,28 +28,69 @@ func DecisionIDFromContext(ctx context.Context) (string, bool) {
 // Router is the deployable routing path: Select -> persist -> Execute -> Reward -> Record -> persist (+ optional shadow).
 // Single Policy instance per process (state_ownership requirement), guarded by policy's own mutex.
 type Router struct {
-	policy   *thompson.Policy
-	registry *ProviderRegistry
-	writer   EvidenceWriter
-	rngFactory func() *rand.Rand
-	mu       sync.Mutex
-	recorded map[string]bool
-	eligibility ShadowEligibility
-	shadowState *shadowState
+	policy        *thompson.Policy
+	registry      *ProviderRegistry
+	writer        EvidenceWriter
+	decisions     DecisionStore
+	strategyID    string
+	mode          RouterMode
+	outcomes      outcome.OutcomeStore
+	learner       *outcome.Learner
+	mapper        outcome.RewardMapper
+	settleAuth    func(r *http.Request) bool
+	settleMu      sync.Mutex
+	rngFactory    func() *rand.Rand
+	mu            sync.Mutex
+	recorded      map[string]bool
+	eligibility   ShadowEligibility
+	shadowState   *shadowState
 	shadowMetrics shadowMetrics
 }
+
+// RouterMode selects the learning contract. LegacyMode preserves the
+// transport-derived Record path. VerifiedMode disables it: the request path
+// records transport observation only and learns exclusively through versioned
+// settlement. The two modes never both update the policy for one decision.
+type RouterMode string
+
+const (
+	// LegacyMode learns from transport-derived reward in the request path.
+	LegacyMode RouterMode = "legacy"
+	// VerifiedMode learns only from settled, independently verified outcomes.
+	VerifiedMode RouterMode = "verified"
+)
 
 type RouterConfig struct {
 	Policy   *thompson.Policy
 	Registry *ProviderRegistry
 	Writer   EvidenceWriter
-	RNGFactory func() *rand.Rand
-	ShadowEligibility ShadowEligibility
-	ShadowSampleRate  float64
-	ShadowTimeout     time.Duration
+	// Decisions persists committed decisions before execution. Nil defaults
+	// to an in-memory store (legacy-compatible, non-durable).
+	Decisions DecisionStore
+	// StrategyID names the execution strategy this router instantiates.
+	// Empty defaults to "default".
+	StrategyID string
+	// Mode selects legacy vs verified learning. Empty defaults to legacy.
+	Mode RouterMode
+	// Outcomes is the durable store for settled job outcomes (verified mode
+	// only; must be explicitly provided, never defaulted).
+	Outcomes outcome.OutcomeStore
+	// Learner folds settled outcomes into Policy (verified mode only).
+	// Nil constructs one over Policy with Mapper (or the binary default).
+	Learner *outcome.Learner
+	// Mapper converts settled jobs to rewards. Nil means the binary status
+	// default. Rejected in legacy mode.
+	Mapper outcome.RewardMapper
+	// SettleAuth authorizes POST /v1/outcomes. Required in verified mode:
+	// outcome writes are never unauthenticated.
+	SettleAuth           func(r *http.Request) bool
+	RNGFactory           func() *rand.Rand
+	ShadowEligibility    ShadowEligibility
+	ShadowSampleRate     float64
+	ShadowTimeout        time.Duration
 	ShadowMaxConcurrency int
-	ShadowMaxBodyBytes int64
-	ShadowRNGSeed     uint64
+	ShadowMaxBodyBytes   int64
+	ShadowRNGSeed        uint64
 }
 
 func NewRouter(cfg RouterConfig) (*Router, error) {
@@ -78,15 +120,37 @@ func NewRouter(cfg RouterConfig) (*Router, error) {
 		MaxBodyBytes:   cfg.ShadowMaxBodyBytes,
 		ShadowRNGSeed:  cfg.ShadowRNGSeed,
 	}
-	return &Router{
+	decisions := cfg.Decisions
+	if decisions == nil {
+		decisions = NewMemoryDecisionStore()
+	}
+	strategy := cfg.StrategyID
+	if strategy == "" {
+		strategy = "default"
+	}
+	mode := cfg.Mode
+	if mode == "" {
+		mode = LegacyMode
+	}
+	if mode != LegacyMode && mode != VerifiedMode {
+		return nil, fmt.Errorf("router: unknown mode %q", string(mode))
+	}
+	rt := &Router{
 		policy:      cfg.Policy,
 		registry:    cfg.Registry,
 		writer:      cfg.Writer,
+		decisions:   decisions,
+		strategyID:  strategy,
+		mode:        mode,
 		rngFactory:  factory,
 		recorded:    make(map[string]bool),
 		eligibility: elig,
 		shadowState: newShadowState(shadowCfg),
-	}, nil
+	}
+	if err := rt.initVerifiedSettlement(cfg); err != nil {
+		return nil, err
+	}
+	return rt, nil
 }
 
 func (rt *Router) SetShadowSampleRate(rate float64) { rt.shadowState.setSampleRate(rate) }
@@ -188,6 +252,8 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	configHash := snap.ConfigHash
+	jobID := "job-" + canonicalID
+	w.Header().Set("X-Job-ID", jobID)
 
 	// Shadow eligibility & sampling (isolated RNG) - provisional before body size check
 	shadowEligible := rt.eligibility.IsEligible(r)
@@ -235,6 +301,33 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	// LoggingPolicyID is derived from the live configuration, never hardcoded
 	// (audit A3): only exact-Thompson passes the OPE reliability gate.
+	loggingPolicyID := rt.policy.LoggingPolicyID()
+	// Durable decision commit (PR 3A): the immutable identity + selection
+	// evidence is persisted BEFORE any external execution begins. Commit
+	// failure is fail-closed: no provider is dispatched.
+	_, _, err = rt.decisions.Commit(CommittedDecision{
+		DecisionID:       canonicalID,
+		JobID:            jobID,
+		StrategyID:       rt.strategyID,
+		SelectedArmID:    chosen,
+		EligibleArmIDs:   eligible,
+		EligibleArmState: eligibleState,
+		SampledScores:    sampledScores,
+		ScoreKind:        scoreKindFor(snap.Config.Selection.Kind, snap.Forced),
+		LoggingPolicyID:  loggingPolicyID,
+		ConfigHash:       configHash,
+		OccurredAt:       nowRFC3339Nano(),
+	})
+	if err != nil {
+		http.Error(w, fmt.Sprintf("decision commit failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+	if err := rt.decisions.MarkExecution(DecisionExecution{
+		DecisionID: canonicalID, Phase: PhaseDispatched, OccurredAt: nowRFC3339Nano(),
+	}); err != nil {
+		http.Error(w, fmt.Sprintf("decision dispatch mark failed: %v", err), http.StatusInternalServerError)
+		return
+	}
 	started := DecisionStarted{
 		SchemaVersion:           1,
 		EventType:               "DecisionStarted",
@@ -246,9 +339,11 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		PolicyConfigHash:        configHash,
 		PosteriorBefore:         snapshotFrom(postBefore),
 		EligibleArmState:        eligibleState,
-		LoggingPolicyID:         rt.policy.LoggingPolicyID(),
+		LoggingPolicyID:         loggingPolicyID,
 		LoggingPolicyConfigHash: configHash,
 		ExternalRequestID:       externalID,
+		JobID:                   jobID,
+		StrategyID:              rt.strategyID,
 		ShadowEligible:          shadowEligible,
 		ShadowSampled:           shadowSampled,
 		ShadowArmID:             shadowArmID,
@@ -339,34 +434,57 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Primary learning BEFORE shadow (V1 integrity)
-	if rt.isAlreadyRecorded(canonicalID) {
-		http.Error(w, "duplicate record for decision", http.StatusInternalServerError)
-		return
+	// Execution-progress mark (best-effort post-execution: the caller already
+	// has a response, and ExecutionObserved above is the durable observation).
+	// A transport error means the provider never rendered a verdict, so the
+	// execution outcome stays unknown until settlement resolves it.
+	execPhase := PhaseObserved
+	execTransport := "ok"
+	if !success {
+		execTransport = "error"
 	}
-	reward := computeReward(snap.Config.Reward, latencyMs, success, provOutcome.CostUSD)
-	if err := rt.policy.Record(rng, chosen, reward); err != nil {
-		http.Error(w, fmt.Sprintf("record failed: %v", err), http.StatusInternalServerError)
-		return
+	if execErr != nil {
+		execPhase = PhaseUnknown
+		execTransport = "transport_error"
 	}
-	rt.markRecorded(canonicalID)
-	postAfter, _ := rt.policy.PosteriorFor(chosen)
-	totalAfter := rt.policy.TotalPulls()
-	learned := DecisionLearned{
-		SchemaVersion:   1,
-		EventType:       "DecisionLearned",
-		DecisionID:      canonicalID,
-		OccurredAt:      nowRFC3339Nano(),
-		ArmID:           chosen,
-		ComputedReward:  reward,
-		PosteriorBefore: snapshotFrom(postBefore),
-		PosteriorAfter:  snapshotFrom(postAfter),
-		TotalPullsAfter: totalAfter,
-	}
-	if err := rt.writer.WriteDecisionLearned(learned); err != nil {
-		_ = err
-		return
-	}
+	lat := latencyMs
+	_ = rt.decisions.MarkExecution(DecisionExecution{
+		DecisionID: canonicalID, Phase: execPhase, Transport: execTransport,
+		LatencyMs: &lat, OccurredAt: nowRFC3339Nano(),
+	})
+
+	// Primary learning BEFORE shadow (V1 integrity). In verified mode this
+	// whole block is skipped: transport observation only, learning happens
+	// exclusively through versioned settlement (see SettleHandler).
+	if rt.mode != VerifiedMode {
+		if rt.isAlreadyRecorded(canonicalID) {
+			http.Error(w, "duplicate record for decision", http.StatusInternalServerError)
+			return
+		}
+		reward := computeReward(snap.Config.Reward, latencyMs, success, provOutcome.CostUSD)
+		if err := rt.policy.Record(rng, chosen, reward); err != nil {
+			http.Error(w, fmt.Sprintf("record failed: %v", err), http.StatusInternalServerError)
+			return
+		}
+		rt.markRecorded(canonicalID)
+		postAfter, _ := rt.policy.PosteriorFor(chosen)
+		totalAfter := rt.policy.TotalPulls()
+		learned := DecisionLearned{
+			SchemaVersion:   1,
+			EventType:       "DecisionLearned",
+			DecisionID:      canonicalID,
+			OccurredAt:      nowRFC3339Nano(),
+			ArmID:           chosen,
+			ComputedReward:  reward,
+			PosteriorBefore: snapshotFrom(postBefore),
+			PosteriorAfter:  snapshotFrom(postAfter),
+			TotalPullsAfter: totalAfter,
+		}
+		if err := rt.writer.WriteDecisionLearned(learned); err != nil {
+			_ = err
+			return
+		}
+	} // end legacy transport-derived learning (skipped in verified mode)
 
 	// Shadow execution only after live learning is complete
 	if shadowSampled && shadowArmID != nil {
@@ -431,7 +549,7 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					SchemaVersion: 1, EventType: "ShadowExecutionObserved", DecisionID: canonicalID, OccurredAt: nowRFC3339Nano(),
 					ArmID: *shadowArmID, PrimaryArmID: chosen, LatencyMs: sLatency, Success: sSuccess,
 					InputTokens: sOutcome.InputTokens, OutputTokens: sOutcome.OutputTokens, CostUSD: sOutcome.CostUSD,
-					ComputedReward: sReward,
+					ComputedReward:         sReward,
 					PrimaryLoggingPolicyID: rt.policy.LoggingPolicyID(), PrimaryLoggingPolicyConfigHash: configHash,
 					ShadowSelectionPolicyID: "uniform-non-primary-v1", ShadowSelectionProbability: prob,
 					EligibleArmCount: eligibleCount, ShadowCandidateCount: shadowCandidateCount,
