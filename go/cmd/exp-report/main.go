@@ -42,6 +42,10 @@ func run(args []string) error {
 	minEffect := fs.Float64("min-effect", 0.15, "minimum relative improvement (commercial bar)")
 	bootstrap := fs.Int("bootstrap", 2000, "bootstrap resamples per comparison")
 	seed := fs.Uint64("seed", 0xE1C, "bootstrap seed")
+	minValid := fs.Float64("min-bootstrap-valid", 0.5, "min valid bootstrap fraction for conclusive verdicts")
+	maxUnmetered := fs.Float64("max-unmetered", 0, "max unmetered-cost share per treatment (0 = 0.10 default; negative disables)")
+	maxCost := fs.Float64("max-cost", 0, "defensible upper cost fill (0 = p90 bounded sensitivity)")
+	expectedWeights := fs.String("expected-weights", "", "charter allocation t0=..,t1=.. (empty = uniform-only check)")
 	format := fs.String("format", "text", "text|json")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -90,6 +94,8 @@ func run(args []string) error {
 		Maturation: *maturation, Now: now,
 		MinJobs: *minJobs, CensorGate: *censorGate, QualityFloor: *qualityFloor,
 		MinEffect: *minEffect, BootstrapN: *bootstrap, BootstrapSeed: *seed,
+		MinBootstrapValidFraction: *minValid, MaxUnmeteredShare: *maxUnmetered,
+		MaxPlausibleCost: *maxCost, ExpectedWeights: parseWeights(*expectedWeights),
 	}
 	rep, err := harness.BuildReport(allAssign, allEvents, txNames, *baseline, *candidate, others, cfg, jobMaps)
 	if err != nil {
@@ -111,6 +117,26 @@ func run(args []string) error {
 	default:
 		return fmt.Errorf("bad --format %q", *format)
 	}
+}
+
+// parseWeights parses "t0=0.33,t1=0.33" into a weight map (empty = nil).
+func parseWeights(s string) map[string]float64 {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	out := map[string]float64{}
+	for _, kv := range strings.Split(s, ",") {
+		parts := strings.SplitN(strings.TrimSpace(kv), "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		var v float64
+		if _, err := fmt.Sscanf(strings.TrimSpace(parts[1]), "%f", &v); err != nil {
+			continue
+		}
+		out[strings.TrimSpace(parts[0])] = v
+	}
+	return out
 }
 
 func printText(rep harness.Report) {
