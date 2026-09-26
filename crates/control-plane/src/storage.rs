@@ -18,6 +18,42 @@ pub trait RegistryStorage: Send + Sync + std::fmt::Debug {
 #[derive(Debug, Default)]
 pub struct MemoryStorage;
 
+// Resolve a `STORAGE` backend name to storage. Only `memory` and `file`
+/// exist as genuine implementations; `s3`, `postgres`, and anything else
+/// fail fast. Silently falling back to memory (as `STORAGE=s3` once did)
+/// loses snapshots on restart while the operator believes they are durable.
+pub fn storage_from_kind(kind: &str, dir: &str) -> Result<Arc<dyn RegistryStorage>, String> {
+    match kind {
+        "file" => Ok(Arc::new(FileStorage::new(dir))),
+        "memory" => Ok(Arc::new(MemoryStorage)),
+        other => Err(format!(
+            "unknown STORAGE={other:?}: want \"file\" or \"memory\" (s3/postgres are not implemented)"
+        )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn s3_and_unknown_backends_fail_explicitly() {
+        // Regression: STORAGE=s3 once silently selected non-durable memory.
+        for bad in ["s3", "postgres", "S3", "file ", "", "redis"] {
+            assert!(
+                storage_from_kind(bad, "/tmp/x").is_err(),
+                "{bad:?} must fail, not fall back"
+            );
+        }
+    }
+
+    #[test]
+    fn memory_and_file_backends_construct() {
+        assert!(storage_from_kind("memory", "/tmp/x").is_ok());
+        assert!(storage_from_kind("file", "/tmp/x").is_ok());
+    }
+}
+
 impl RegistryStorage for MemoryStorage {
     fn save_all(&self, _registry: &Registry) -> Result<(), String> {
         Ok(())
