@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"sync"
 	"time"
 
 	"github.com/wiramahendra/thompson-sampling/go/outcome"
@@ -23,6 +24,27 @@ type GatewayProc struct {
 	Dir       string
 	cmd       *exec.Cmd
 	client    *http.Client
+}
+
+// syncBuffer is a goroutine-safe bytes.Buffer for capturing child stderr.
+// os/exec writes to Cmd.Stderr from background goroutines while
+// SpawnGateway's health-poll loop reads the capture on the failure path;
+// bytes.Buffer alone races under -race.
+type syncBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (s *syncBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *syncBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
 }
 
 // SpawnGateway starts a router binary with per-treatment files in verified
@@ -44,7 +66,7 @@ func SpawnGateway(routerBin, treatment, dir, publicAddr, settleAddr, token, arms
 	)
 	cmd := exec.Command(routerBin)
 	cmd.Env = env
-	var stderr bytes.Buffer
+	var stderr syncBuffer
 	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("exp-run: start gateway %s: %w", treatment, err)
