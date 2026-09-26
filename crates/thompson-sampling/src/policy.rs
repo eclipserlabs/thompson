@@ -247,6 +247,14 @@ impl ThompsonSampling {
                 }
             }
             Selection::UcbRegularized { c, until_pulls } => {
+                // NaN poisons every score comparison (all false), silently
+                // degenerating selection to first-arm-wins.
+                if !c.is_finite() {
+                    return Err(Error::InvalidParameter {
+                        parameter: "selection.ucb_regularized.c".to_string(),
+                        value: c,
+                    });
+                }
                 if self.observer.is_some() {
                     self.argmax_ucb_with_scores(rng, c, until_pulls)
                 } else {
@@ -468,6 +476,7 @@ impl ThompsonSampling {
         id: &str,
         outcome: &Outcome,
     ) -> Result<()> {
+        self.config.reward_policy.weights.validate()?;
         let reward = self.config.reward_policy.reward(outcome);
         self.record(rng, id, reward)
     }
@@ -1054,5 +1063,25 @@ mod tests {
         for _ in 0..50 {
             assert_eq!(policy.select(&mut rng).unwrap(), "b");
         }
+    }
+
+    #[test]
+    fn nan_ucb_coefficient_is_rejected() {
+        // NaN poisons every score comparison (all false), silently
+        // degenerating selection to first-arm-wins (matches Go port).
+        let mut policy = ThompsonSampling::new(
+            Config {
+                selection: Selection::UcbRegularized {
+                    c: f64::NAN,
+                    until_pulls: 30,
+                },
+                ..Config::default()
+            },
+            Box::new(crate::sampler::Exact),
+        );
+        for id in ["a", "b"] {
+            policy.add_arm(id.into());
+        }
+        assert!(policy.select(&mut rng()).is_err());
     }
 }

@@ -389,3 +389,176 @@ func TestPendingNeverLearns(t *testing.T) {
 		t.Fatal("PENDING moved the policy")
 	}
 }
+
+// B7: rebuild failure rolls back to the pre-rebuild state instead of
+// leaving a half-folded policy. An event naming an unknown arm fails the
+// fold after genesis was already restored.
+func TestRebuildFailureRollsBack(t *testing.T) {
+	store := NewMemoryOutcomeStore()
+	p := newTestPolicy()
+	l := newLearnerOver(p, store)
+	if _, err := Settle(store, l, settledJob("j1", "d1", "cheap", StatusAccepted, 1)); err != nil {
+		t.Fatal(err)
+	}
+	before := p.Snapshot()
+	beforeApplied := l.Applied()
+	// Bypass the store (which would reject the unknown arm only at fold
+	// time): rebuild directly over history plus a foreign event.
+	bad := settledJob("j2", "d2", "ghost", StatusAccepted, 1)
+	_, err := l.Rebuild(append(store.Events(), bad))
+	if err == nil {
+		t.Fatal("rebuild with unknown arm succeeded")
+	}
+	after := p.Snapshot()
+	if len(after.Arms) != len(before.Arms) || after.TotalPulls != before.TotalPulls {
+		t.Fatalf("policy left half-folded: %+v vs %+v", after, before)
+	}
+	for i := range after.Arms {
+		if after.Arms[i] != before.Arms[i] {
+			t.Fatalf("arm %d changed by failed rebuild", i)
+		}
+	}
+	got := l.Applied()
+	if len(got) != len(beforeApplied) {
+		t.Fatalf("cursor changed by failed rebuild: %v", got)
+	}
+	for k, v := range beforeApplied {
+		if got[k] != v {
+			t.Fatalf("cursor %q changed by failed rebuild", k)
+		}
+	}
+}
+
+// B7: arms added under a live learner are refused by rebuilds until an
+// explicit Rebase adopts them.
+func TestArmSetChangeRequiresRebase(t *testing.T) {
+	store := NewMemoryOutcomeStore()
+	p := newTestPolicy()
+	l := newLearnerOver(p, store)
+	if _, err := Settle(store, l, settledJob("j1", "d1", "cheap", StatusAccepted, 1)); err != nil {
+		t.Fatal(err)
+	}
+	p.AddArm("fresh")
+	ev := settledJob("j2", "d2", "fresh", StatusAccepted, 1)
+	if _, err := Settle(store, l, ev); err == nil {
+		t.Fatal("settlement into un-rebased arm set succeeded (would wipe the arm)")
+	}
+	if p.HasArm("fresh") != true {
+		t.Fatal("arm unexpectedly gone")
+	}
+	l.Rebase()
+	// The refused v1 was still committed by Submit (ordering layer), so a
+	// fresh job proves post-Rebase learning works.
+	ev2 := settledJob("j3", "d3", "fresh", StatusAccepted, 1)
+	if _, err := Settle(store, l, ev2); err != nil {
+		t.Fatalf("settlement after Rebase failed: %v", err)
+	}
+	if posteriorOf(p, "fresh").Pulls != 1 {
+		t.Fatal("rebased arm did not learn")
+	}
+}
+
+// B7: incremental application and deterministic rebuild agree, including
+// with discounting enabled (order-dependent updates replayed in order).
+func TestIncrementalEqualsRebuildWithDiscount(t *testing.T) {
+	mkpolicy := func() *thompson.Policy {
+		cfg := thompson.DefaultConfig()
+		cfg.Discount = 0.99
+		p := thompson.New(cfg, thompson.ExactSampler{})
+		p.AddArm("cheap")
+		p.AddArm("strong")
+		return p
+	}
+	stream := []OutcomeEvent{
+		settledJob("j1", "d1", "cheap", StatusAccepted, 1),
+		settledJob("j2", "d2", "strong", StatusRejected, 1),
+		settledJob("j3", "d3", "cheap", StatusAccepted, 1),
+		settledJob("j1", "d1", "cheap", StatusRejected, 2),
+	}
+	store := NewMemoryOutcomeStore()
+	p := mkpolicy()
+	l := NewLearner(p, BinaryStatusMapper{}, store.Events)
+	for _, ev := range stream {
+		if _, err := Settle(store, l, ev); err != nil {
+			t.Fatalf("settle: %v", err)
+		}
+	}
+	q := mkpolicy()
+	l2 := NewLearner(q, BinaryStatusMapper{}, store.Events)
+	moved, err := l2.Rebuild(store.Events())
+	if err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	if !moved {
+		t.Fatal("rebuild reported no movement over real history")
+	}
+	assertSameLearnedState(t, p, q, "cheap", "strong")
+}
+
+// B7: concurrent distinct-job applies each land exactly once; cursor is
+// complete afterwards.
+func TestConcurrentDistinctApplies(t *testing.T) {
+	store := NewMemoryOutcomeStore()
+	p := newTestPolicy()
+	l := newLearnerOver(p, store)
+	const n = 32
+	var wg sync.WaitGroup
+	errs := make(chan error, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			job := "job-" + itoa(i)
+			if _, err := Settle(store, l, settledJob(job, "d", "cheap", StatusAccepted, 1)); err != nil {
+				errs <- err
+			}
+		}(i)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatalf("concurrent settle: %v", err)
+	}
+	if got := p.TotalPulls(); got != n {
+		t.Fatalf("pulls=%d want %d (lost or duplicated update)", got, n)
+	}
+	if len(l.Applied()) != n {
+		t.Fatalf("cursor covers %d jobs want %d", len(l.Applied()), n)
+	}
+}
+
+func itoa(i int) string {
+	if i == 0 {
+		return "0"
+	}
+	var b [20]byte
+	pos := len(b)
+	for i > 0 {
+		pos--
+		b[pos] = byte('0' + i%10)
+		i /= 10
+	}
+	return string(b[pos:])
+}
+
+// B5: rebuilds preserve the logging-policy identity. The only config
+// mutation path is RestoreSnapshot during rebuild; a drift there aborts
+// instead of learning under a swapped configuration.
+func TestRebuildPreservesLoggingPolicyID(t *testing.T) {
+	store := NewMemoryOutcomeStore()
+	p := newTestPolicy()
+	before := p.LoggingPolicyID()
+	l := newLearnerOver(p, store)
+	if _, err := Settle(store, l, settledJob("j1", "d1", "cheap", StatusAccepted, 1)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Settle(store, l, settledJob("j1", "d1", "cheap", StatusRejected, 2)); err != nil {
+		t.Fatal(err)
+	}
+	if got := p.LoggingPolicyID(); got != before {
+		t.Fatalf("identity drifted across rebuild: %q vs %q", got, before)
+	}
+	if got := p.SamplerName(); got != "exact" {
+		t.Fatalf("sampler changed across rebuild: %q", got)
+	}
+}

@@ -377,3 +377,73 @@ func contains(s, sub string) bool {
 	}
 	return false
 }
+
+// B3: recovery enforces the same version invariants as live submission.
+// Gaps, conflicting duplicates, and stale versions fail the open loudly;
+// exact-duplicate lines (idempotent redelivery persisted twice) are skipped.
+func TestRecoverEnforcesVersionChain(t *testing.T) {
+	writeLedger := func(t *testing.T, evs []OutcomeEvent) string {
+		t.Helper()
+		path := filepath.Join(t.TempDir(), "outcomes.jsonl")
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0o600)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, ev := range evs {
+			b, err := json.Marshal(ev)
+			if err != nil {
+				t.Fatal(err)
+			}
+			b = append(b, '\n')
+			if _, err := f.Write(b); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+
+	// Gap: v1 then v3.
+	bad := []OutcomeEvent{
+		settledJob("j1", "d1", "a", StatusAccepted, 1),
+		settledJob("j1", "d1", "a", StatusRejected, 3),
+	}
+	if _, err := NewFileOutcomeStore(writeLedger(t, bad)); err == nil {
+		t.Fatal("version gap recovered silently")
+	}
+
+	// Conflicting duplicate version.
+	v1 := settledJob("j1", "d1", "a", StatusAccepted, 1)
+	v1b := settledJob("j1", "d1", "a", StatusRejected, 1)
+	if _, err := NewFileOutcomeStore(writeLedger(t, []OutcomeEvent{v1, v1b})); err == nil {
+		t.Fatal("conflicting duplicate recovered silently")
+	}
+
+	// Stale version after newer.
+	v2 := settledJob("j1", "d1", "a", StatusRejected, 2)
+	if _, err := NewFileOutcomeStore(writeLedger(t, []OutcomeEvent{v1, v2, v1})); err == nil {
+		t.Fatal("stale redelivery recovered silently")
+	}
+
+	// First version not 1.
+	if _, err := NewFileOutcomeStore(writeLedger(t, []OutcomeEvent{v2})); err == nil {
+		t.Fatal("ledger starting at v2 recovered silently")
+	}
+
+	// Exact-duplicate lines are idempotent: skipped, single copy indexed.
+	dup := writeLedger(t, []OutcomeEvent{v1, v1, v2})
+	s, err := NewFileOutcomeStore(dup)
+	if err != nil {
+		t.Fatalf("exact duplicates rejected: %v", err)
+	}
+	defer s.Close()
+	if s.Len() != 2 {
+		t.Fatalf("len=%d want 2 (duplicate collapsed)", s.Len())
+	}
+	latest, ok := s.Latest("j1")
+	if !ok || latest.Version != 2 {
+		t.Fatalf("latest wrong: %+v", latest)
+	}
+}
