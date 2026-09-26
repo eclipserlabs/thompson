@@ -275,6 +275,17 @@ func (p *Policy) ConfigSnapshot() Config {
 	return p.config
 }
 
+// hashConfig returns a stable hex hash of a policy config (JSON canonical).
+// Errors are impossible with known structs; on marshal error returns empty.
+func hashConfig(cfg Config) string {
+	b, err := json.Marshal(cfg)
+	if err != nil {
+		return ""
+	}
+	h := sha256.Sum256(b)
+	return fmt.Sprintf("%x", h[:8]) // 16 hex chars sufficient for V0
+}
+
 // ConfigHash returns a stable hex hash of the policy config (JSON canonical).
 // Used for DecisionStarted.policy_config_hash. Errors are impossible with
 // known structs; on marshal error returns empty.
@@ -282,12 +293,7 @@ func (p *Policy) ConfigHash() string {
 	p.mu.Lock()
 	cfg := p.config
 	p.mu.Unlock()
-	b, err := json.Marshal(cfg)
-	if err != nil {
-		return ""
-	}
-	h := sha256.Sum256(b)
-	return fmt.Sprintf("%x", h[:8]) // 16 hex chars sufficient for V0
+	return hashConfig(cfg)
 }
 
 // SelectWithScores atomically selects an arm and returns the actual sampled
