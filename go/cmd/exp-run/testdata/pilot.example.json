@@ -1,0 +1,37 @@
+{
+  "config_version": "pilot-config-v1",
+  "experiment_id": "pilot-ACME-001",
+  "workload_name": "acme-support",
+  "workload_version": "REPLACE-WITH-MANIFEST-workload_version",
+  "treatments": ["t0", "t1", "t2"],
+  "baseline": "t0",
+  "candidate": "t2",
+  "verifier": {
+    "provenance": "checker:acme-independent-v2",
+    "allowed_verifiers": ["checker:acme-independent-v2"]
+  },
+  "quality_floor": 0.8,
+  "primary_metric": "fully-loaded-cost-per-verified-success",
+  "maturation_hours": 24,
+  "missing_cost_rule": "exclude-unmetered",
+  "censor_gate": 0.05,
+  "sample_size": {
+    "source": "customer:acme-feasibility-v1",
+    "baseline_mean": 0.2,
+    "stddev": 0.1,
+    "min_rel_effect": 0.15,
+    "alpha": 0.05,
+    "power": 0.8,
+    "per_group_n": 5000
+  },
+  "stopping_rules": "No interim efficacy stops. Stop only for safety review or after all assigned jobs mature.",
+  "commercial_threshold": 0.15,
+  "min_jobs": 100,
+  "bootstrap_n": 500,
+  "bootstrap_seed": 7,
+  "acknowledgement": {
+    "by": "REPLACE-WITH-SIGNOFF-IDENTITY",
+    "at": "REPLACE-WITH-RFC3339-TIME",
+    "config_hash": "REPLACE-WITH-FROZEN-HASH (run: exp-run pilot-check --config pilot.json --manifest manifest.json)"
+  }
+}

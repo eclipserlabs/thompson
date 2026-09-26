@@ -16,7 +16,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fatal("usage: exp-run <gen|run|all> [flags]")
+		fatal("usage: exp-run <gen|run|all|feasibility|pilot-check> [flags]")
 	}
 	var err error
 	switch os.Args[1] {
@@ -26,8 +26,12 @@ func main() {
 		err = runCmd(os.Args[2:])
 	case "all":
 		err = allCmd(os.Args[2:])
+	case "feasibility":
+		err = feasibilityCmd(os.Args[2:])
+	case "pilot-check":
+		err = pilotCheckCmd(os.Args[2:])
 	default:
-		fatal("unknown subcommand %q (gen|run|all)", os.Args[1])
+		fatal("unknown subcommand %q (gen|run|all|feasibility|pilot-check)", os.Args[1])
 	}
 	if err != nil {
 		fatal("%v", err)
@@ -175,6 +179,11 @@ type runFlags struct {
 	step        int
 	crashAfter  int
 	selSeed     uint64
+	// Pilot gate: when pilotConfig is set, the run refuses to start unless
+	// the referenced pilot configuration validates against the manifest and
+	// --acknowledge carries the frozen content hash (explicit sign-off).
+	pilotConfig string
+	acknowledge string
 }
 
 func runFlagSet(name string) (*flag.FlagSet, *runFlags) {
@@ -191,6 +200,8 @@ func runFlagSet(name string) (*flag.FlagSet, *runFlags) {
 	fs.IntVar(&f.step, "step-seconds", 60, "sim seconds per job")
 	fs.IntVar(&f.crashAfter, "crash-after", 0, "exit(3) after N jobs (resume proof only)")
 	fs.Uint64Var(&f.selSeed, "selection-seed", 0, "fixed gateway selection seed base (0 = time-seeded; required for reproducible dry runs)")
+	fs.StringVar(&f.pilotConfig, "pilot-config", "", "frozen pilot configuration path (optional; when set, --acknowledge is required)")
+	fs.StringVar(&f.acknowledge, "acknowledge", "", "frozen pilot content hash sign-off (required with --pilot-config)")
 	return fs, f
 }
 
@@ -206,6 +217,9 @@ func runCmd(args []string) error {
 func execute(f *runFlags) error {
 	m, err := LoadManifest(f.manifest)
 	if err != nil {
+		return err
+	}
+	if err := gatePilotConfig(f, m); err != nil {
 		return err
 	}
 	pub, err := parsePorts(f.pubPorts)
