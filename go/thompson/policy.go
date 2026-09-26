@@ -242,6 +242,31 @@ func (p *Policy) TotalPulls() uint64 {
 	return p.totalPulls
 }
 
+// LoggingPolicyID derives the behavior-policy identifier from the actual
+// active configuration: selection kind plus sampler name. It is the single
+// source for DecisionStarted.LoggingPolicyID and the shadow events'
+// PrimaryLoggingPolicyID, so live and shadow paths can never disagree (audit
+// A3). Only "exact-thompson-v1" describes the exact-Thompson argmax that the
+// offline propensity estimators model; every other configuration yields an ID
+// the OPE reliability gate refuses as a denominator. Historical records keep
+// whatever string they were written with.
+func (p *Policy) LoggingPolicyID() string {
+	p.mu.Lock()
+	kind := p.config.Selection.Kind
+	p.mu.Unlock()
+	switch kind {
+	case UCBRegularized:
+		return "ucb-regularized-v1"
+	case PhasedSelection:
+		return "phased-v1"
+	default:
+		if p.sampler.Name() == "exact" {
+			return "exact-thompson-v1"
+		}
+		return "thompson-" + p.sampler.Name() + "-v1"
+	}
+}
+
 // SamplerName returns the active sampler's name.
 func (p *Policy) SamplerName() string { return p.sampler.Name() }
 
