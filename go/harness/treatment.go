@@ -346,6 +346,86 @@ func RequiredPerGroup(stddev, baselineMean, relEffect, alpha, power float64) flo
 	return n
 }
 
+// HistoricalSampleInput is the input contract for recalculating sample size
+// from real workload data when it exists. Every field records provenance:
+// source names the dataset, collectedAt bounds it. Assumption sets (like the
+// charter's illustrative table) use source "assumption:<name>" and must never
+// be presented as measurements.
+type HistoricalSampleInput struct {
+	Source       string  `json:"source"`
+	CollectedAt  string  `json:"collected_at"`
+	BaselineMean float64 `json:"baseline_mean"`
+	Stddev       float64 `json:"stddev"`
+	Alpha        float64 `json:"alpha"`
+	Power        float64 `json:"power"`
+	MinRelEffect float64 `json:"min_rel_effect"`
+}
+
+// Validate rejects non-positive or out-of-range sizing inputs.
+func (h HistoricalSampleInput) Validate() error {
+	if h.Source == "" {
+		return fmt.Errorf("harness: sample input needs a source")
+	}
+	if h.BaselineMean <= 0 || h.Stddev <= 0 {
+		return fmt.Errorf("harness: sample input needs positive mean and stddev")
+	}
+	if h.Alpha <= 0 || h.Alpha >= 1 || h.Power <= 0 || h.Power >= 1 {
+		return fmt.Errorf("harness: alpha/power must be in (0,1)")
+	}
+	if h.MinRelEffect <= 0 {
+		return fmt.Errorf("harness: min_rel_effect must be positive")
+	}
+	return nil
+}
+
+// RequiredFromHistorical sizes one treatment arm from measured (or
+// explicitly assumed) inputs. It is RequiredPerGroup with provenance.
+func RequiredFromHistorical(h HistoricalSampleInput) (float64, error) {
+	if err := h.Validate(); err != nil {
+		return 0, err
+	}
+	return RequiredPerGroup(h.Stddev, h.BaselineMean, h.MinRelEffect, h.Alpha, h.Power), nil
+}
+
+// ObservedVariance measures pooled per-job cost mean/variance over matured,
+// fully-metered jobs in the named treatments. Dry-run callers must label
+// the result synthetic; it must not feed the frozen charter without a
+// separately reviewed amendment.
+func ObservedVariance(records []JobRecord, treatments []string) (mean, stddev float64, n int) {
+	var costs []float64
+	for _, r := range records {
+		if !r.Matured || !r.HasOutcome || !r.FullyMetered {
+			continue
+		}
+		if !containsStr(treatments, r.Treatment) {
+			continue
+		}
+		costs = append(costs, r.CostMetered)
+	}
+	n = len(costs)
+	if n < 2 {
+		return 0, 0, n
+	}
+	for _, c := range costs {
+		mean += c
+	}
+	mean /= float64(n)
+	v := 0.0
+	for _, c := range costs {
+		v += (c - mean) * (c - mean)
+	}
+	return mean, math.Sqrt(v / float64(n-1)), n
+}
+
+func containsStr(xs []string, s string) bool {
+	for _, x := range xs {
+		if x == s {
+			return true
+		}
+	}
+	return false
+}
+
 // normalQuantile approximates Φ⁻¹(p) (Acklam's approximation, ~1e-9).
 func normalQuantile(p float64) float64 {
 	if p <= 0 || p >= 1 {

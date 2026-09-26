@@ -72,6 +72,7 @@ func run(args []string) error {
 
 	var allAssign []harness.Assignment
 	var allEvents []outcome.OutcomeEvent
+	jobMaps := map[string]harness.JobMap{}
 	for _, n := range txNames {
 		as, evs, err := harness.LoadTreatmentDir(*root + "/" + n)
 		if err != nil {
@@ -79,14 +80,23 @@ func run(args []string) error {
 		}
 		allAssign = append(allAssign, as...)
 		allEvents = append(allEvents, evs...)
+		jm, err := harness.LoadJobMap(*root + "/" + n)
+		if err != nil {
+			return fmt.Errorf("treatment %s jobmap: %w", n, err)
+		}
+		jobMaps[n] = jm
 	}
 	cfg := harness.ReportConfig{
 		Maturation: *maturation, Now: now,
 		MinJobs: *minJobs, CensorGate: *censorGate, QualityFloor: *qualityFloor,
 		MinEffect: *minEffect, BootstrapN: *bootstrap, BootstrapSeed: *seed,
 	}
-	rep, err := buildReport(allAssign, allEvents, txNames, *baseline, *candidate, others, cfg)
+	rep, err := harness.BuildReport(allAssign, allEvents, txNames, *baseline, *candidate, others, cfg, jobMaps)
 	if err != nil {
+		var nr *harness.NotReadyError
+		if errors.As(err, &nr) {
+			return &refused{nr.Reason}
+		}
 		return err
 	}
 
@@ -101,65 +111,6 @@ func run(args []string) error {
 	default:
 		return fmt.Errorf("bad --format %q", *format)
 	}
-}
-
-// buildReport enforces readiness (all jobs matured), then analyzes.
-func buildReport(allAssign []harness.Assignment, allEvents []outcome.OutcomeEvent, txNames []string, baseline, candidate string, others []string, cfg harness.ReportConfig) (harness.Report, error) {
-	if len(allAssign) == 0 {
-		return harness.Report{}, &refused{"no assigned jobs"}
-	}
-
-	// Do not finalize until the final assigned job has matured.
-	latest := allAssign[0].AssignedAt
-	for _, a := range allAssign[1:] {
-		if a.AssignedAt > latest {
-			latest = a.AssignedAt
-		}
-	}
-	lastAssigned, err := time.Parse(time.RFC3339Nano, latest)
-	if err != nil {
-		return harness.Report{}, fmt.Errorf("bad assigned_at: %w", err)
-	}
-	if cfg.Now.Before(lastAssigned.Add(cfg.Maturation)) {
-		return harness.Report{}, &refused{fmt.Sprintf("final job assigned %s matures at %s (now %s)",
-			lastAssigned.Format(time.RFC3339), lastAssigned.Add(cfg.Maturation).Format(time.RFC3339),
-			cfg.Now.Format(time.RFC3339))}
-	}
-
-	records := harness.MatureJobs(allAssign, allEvents, cfg.Now, cfg.Maturation)
-	baseWinner := argminPrimary(records, txNames)
-	half, dbl := harness.MaturityStability(baseWinner, allAssign, allEvents, cfg.Now, cfg.Maturation, txNames)
-	return harness.Analyze(records, cfg, baseline, candidate, others, half, dbl), nil
-}
-
-// argminPrimary is the base-cutoff winner by primary metric.
-func argminPrimary(records []harness.JobRecord, txNames []string) string {
-	byTx := map[string][]harness.JobRecord{}
-	for _, r := range records {
-		if r.Matured {
-			byTx[r.Treatment] = append(byTx[r.Treatment], r)
-		}
-	}
-	best, bestP := "", 0.0
-	first := true
-	for _, n := range txNames {
-		var cost, acc float64
-		for _, r := range byTx[n] {
-			if r.HasOutcome && r.FullyMetered && (r.Status == outcome.StatusAccepted || r.Status == outcome.StatusRejected) {
-				cost += r.CostMetered
-				if r.Accepted {
-					acc++
-				}
-			}
-		}
-		if acc == 0 {
-			continue
-		}
-		if p := cost / acc; first || p < bestP {
-			best, bestP, first = n, p, false
-		}
-	}
-	return best
 }
 
 func printText(rep harness.Report) {
@@ -205,7 +156,8 @@ func main() {
 // exitCode maps errors to process exit codes (2 = refused/not-ready).
 func exitCode(err error) int {
 	var r *refused
-	if errors.As(err, &r) {
+	var nr *harness.NotReadyError
+	if errors.As(err, &r) || errors.As(err, &nr) {
 		return 2
 	}
 	return 1

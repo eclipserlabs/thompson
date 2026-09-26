@@ -11,10 +11,13 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math/rand/v2"
 	"net/http"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/wiramahendra/thompson-sampling/go/gateway"
@@ -36,6 +39,13 @@ type appConfig struct {
 
 	mode       gateway.RouterMode
 	strategyID string
+	mapper     string
+	// selectionSeed, when set, seeds every request RNG identically
+	// (deterministic selection for reproducible dry runs; production
+	// omits it for time-seeded randomness).
+	selectionSeed *uint64
+	// checkpointEvery cadences verified-learning checkpoints; <=0 disables.
+	checkpointEvery time.Duration
 
 	decisionsPath string
 	outcomesPath  string
@@ -125,6 +135,22 @@ func loadConfig(getenv func(string) string) (appConfig, error) {
 		if c.settleAddr == "" {
 			c.settleAddr = "127.0.0.1:8081"
 		}
+		c.mapper = getenv("MAPPER")
+		if v := getenv("SELECTION_SEED"); v != "" {
+			sd, err := strconv.ParseUint(v, 10, 64)
+			if err != nil {
+				return c, fmt.Errorf("router: bad SELECTION_SEED: %w", err)
+			}
+			c.selectionSeed = &sd
+		}
+		c.checkpointEvery = 60 * time.Second
+		if v := getenv("CHECKPOINT_INTERVAL"); v != "" {
+			d, err := time.ParseDuration(v)
+			if err != nil {
+				return c, fmt.Errorf("router: bad CHECKPOINT_INTERVAL: %w", err)
+			}
+			c.checkpointEvery = d
+		}
 	}
 	return c, nil
 }
@@ -179,6 +205,10 @@ func buildRouter(cfg appConfig) (*gateway.Router, func(), error) {
 		ShadowTimeout:        cfg.shadowTimeout,
 		ShadowMaxConcurrency: cfg.shadowMaxConc,
 	}
+	if cfg.selectionSeed != nil {
+		sd := *cfg.selectionSeed
+		rc.RNGFactory = func() *rand.Rand { return rand.New(rand.NewPCG(sd, 0)) }
+	}
 	if cfg.mode == gateway.VerifiedMode {
 		decisions, err := gateway.NewFileDecisionStore(cfg.decisionsPath)
 		if err != nil {
@@ -199,6 +229,14 @@ func buildRouter(cfg appConfig) (*gateway.Router, func(), error) {
 		rc.Decisions = decisions
 		rc.Outcomes = outcomes
 		rc.SettleAuth = bearerAuth(cfg.settleToken)
+		switch cfg.mapper {
+		case "", "binary":
+		case "noop":
+			rc.Mapper = outcome.NoopMapper{}
+		default:
+			cleanup()
+			return nil, nil, fmt.Errorf("router: unknown MAPPER %q", cfg.mapper)
+		}
 	}
 	router, err := gateway.NewRouter(rc)
 	if err != nil {
@@ -284,6 +322,32 @@ func main() {
 		go func() {
 			log.Printf("settlement listening on %s (internal only)", cfg.settleAddr)
 			log.Fatal(http.ListenAndServe(cfg.settleAddr, internalMux(router)))
+		}()
+		// Checkpoint cadence: bounded replay time at the cost of one sync
+		// write per interval. SIGTERM/SIGINT checkpoints once more and exits
+		// cleanly; SIGKILL falls back to ledger replay (slower, still exact).
+		if cfg.checkpointEvery > 0 {
+			go func() {
+				t := time.NewTicker(cfg.checkpointEvery)
+				defer t.Stop()
+				for range t.C {
+					if err := router.CheckpointVerifiedLearning(checkpointPath(cfg)); err != nil {
+						log.Printf("checkpoint: %v", err)
+					}
+				}
+			}()
+		}
+		go func() {
+			sig := make(chan os.Signal, 1)
+			signal.Notify(sig, syscall.SIGTERM, syscall.SIGINT)
+			<-sig
+			if cfg.mode == gateway.VerifiedMode {
+				if err := router.CheckpointVerifiedLearning(checkpointPath(cfg)); err != nil {
+					log.Printf("shutdown checkpoint: %v", err)
+				}
+			}
+			cleanup()
+			os.Exit(0)
 		}()
 	}
 

@@ -117,7 +117,7 @@ func TestExpReportEndToEnd(t *testing.T) {
 		}
 	}
 
-	rep, err := buildReport(allAssign, allEvents, []string{"t0", "t1", "t2"}, "t0", "t2", []string{"t1"}, reportCfg(at.Add(72*time.Hour)))
+	rep, err := harness.BuildReport(allAssign, allEvents, []string{"t0", "t1", "t2"}, "t0", "t2", []string{"t1"}, reportCfg(at.Add(72*time.Hour)), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,11 +151,11 @@ func TestExpReportRefusesImmature(t *testing.T) {
 		allAssign = append(allAssign, as...)
 		allEvents = append(allEvents, evs...)
 	}
-	_, err := buildReport(allAssign, allEvents, []string{"t0", "t1", "t2"}, "t0", "t2", []string{"t1"}, reportCfg(at.Add(time.Hour)))
+	_, err := harness.BuildReport(allAssign, allEvents, []string{"t0", "t1", "t2"}, "t0", "t2", []string{"t1"}, reportCfg(at.Add(time.Hour)), nil)
 	if err == nil {
 		t.Fatal("immature analysis accepted (must refuse)")
 	}
-	var r *refused
+	var r *harness.NotReadyError
 	if !errors.As(err, &r) {
 		t.Fatalf("wrong error type: %T %v", err, err)
 	}
