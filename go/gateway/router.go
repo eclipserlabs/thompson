@@ -164,23 +164,30 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-External-Request-ID", *externalID)
 	}
 
-	eligible := rt.policy.EligibleArmIDs()
-	if len(eligible) == 0 {
-		http.Error(w, "no arms registered", http.StatusServiceUnavailable)
-		return
-	}
+	// Atomic decision snapshot (Phase 3/P0 fix for audit A1): eligible set,
+	// selection, sampled scores, per-arm posteriors, total pulls and config
+	// all come from one locked instant. Separate EligibleArmIDs /
+	// SelectWithScores / PosteriorFor / ConfigHash calls could observe
+	// different policy versions under concurrency and tear the evidence.
 	rng := rt.rngFactory()
-	chosen, sampledScores, err := rt.policy.SelectWithScores(rng)
+	snap, err := rt.policy.SelectSnapshot(rng)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
-	postBefore, ok := rt.policy.PosteriorFor(chosen)
+	eligible := snap.Eligible
+	if len(eligible) == 0 {
+		http.Error(w, "no arms registered", http.StatusServiceUnavailable)
+		return
+	}
+	chosen := snap.Selected
+	sampledScores := snap.Scores
+	postBefore, ok := snap.Posteriors[chosen]
 	if !ok {
 		http.Error(w, "selected arm not found", http.StatusInternalServerError)
 		return
 	}
-	configHash := rt.policy.ConfigHash()
+	configHash := snap.ConfigHash
 
 	// Shadow eligibility & sampling (isolated RNG) - provisional before body size check
 	shadowEligible := rt.eligibility.IsEligible(r)
@@ -218,12 +225,13 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Build eligible arm state snapshot for OPE (deterministic order)
+	// Build eligible arm state snapshot for OPE (deterministic order).
+	// Sourced from the atomic decision snapshot, so the persisted posteriors
+	// are exactly the state the Thompson draw ran on.
 	eligibleState := make([]EligibleArmState, 0, len(eligible))
 	for _, id := range eligible {
-		if p, ok := rt.policy.PosteriorFor(id); ok {
-			eligibleState = append(eligibleState, EligibleArmState{ArmID: id, Alpha: p.Alpha, Beta: p.Beta, Pulls: p.Pulls})
-		}
+		p := snap.Posteriors[id]
+		eligibleState = append(eligibleState, EligibleArmState{ArmID: id, Alpha: p.Alpha, Beta: p.Beta, Pulls: p.Pulls})
 	}
 	started := DecisionStarted{
 		SchemaVersion:           1,
@@ -334,7 +342,7 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "duplicate record for decision", http.StatusInternalServerError)
 		return
 	}
-	reward := computeReward(rt.policy.ConfigSnapshot().Reward, latencyMs, success, provOutcome.CostUSD)
+	reward := computeReward(snap.Config.Reward, latencyMs, success, provOutcome.CostUSD)
 	if err := rt.policy.Record(rng, chosen, reward); err != nil {
 		http.Error(w, fmt.Sprintf("record failed: %v", err), http.StatusInternalServerError)
 		return
@@ -412,7 +420,7 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 						rt.shadowMetrics.timeout.Add(1)
 					}
 				}
-				sReward := computeReward(rt.policy.ConfigSnapshot().Reward, sLatency, sSuccess, sOutcome.CostUSD)
+				sReward := computeReward(snap.Config.Reward, sLatency, sSuccess, sOutcome.CostUSD)
 				prob := 0.0
 				if shadowCandidateCount > 0 {
 					prob = 1.0 / float64(shadowCandidateCount)
