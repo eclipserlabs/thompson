@@ -78,6 +78,12 @@ func Open(path string) (*Journal, error) {
 	// contention between writers surfaces as SQLITE_BUSY instead of
 	// serializing inside a shared cache.
 	db, err := sql.Open("sqlite", "file:"+path)
+	// Single connection process-wide: transactions serialize here instead
+	// of contending inside the driver. Cross-PROCESS contention still
+	// surfaces as SQLITE_BUSY (fail-closed); in-process callers never see
+	// spurious BUSY from pool interleaving. Matches the single-writer
+	// contract in the strong sense.
+	db.SetMaxOpenConns(1)
 	if err != nil {
 		return nil, fmt.Errorf("journal: open: %w", err)
 	}
