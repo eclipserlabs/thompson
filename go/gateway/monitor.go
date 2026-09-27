@@ -20,6 +20,22 @@ type ArmHealth struct {
 	AcceptRate  float64 `json:"accept_rate"`
 	Censored    int     `json:"censored"`
 	Unmetered   int     `json:"unmetered"`
+	// MeteredJobs counts fully metered matured jobs; PartialJobs counts
+	// matured jobs with SOME metered attempt cost but incomplete totals.
+	// Both are accounting visibility: partial costs are preserved for
+	// sensitivity analysis, never completed by invention.
+	MeteredJobs int `json:"metered_jobs"`
+	PartialJobs int `json:"partial_jobs"`
+	// HumanFixed counts accepted jobs the arm ATTEMPTED but did not decide:
+	// a human (armless) attempt verified success instead. Such jobs move no
+	// arm posterior (inherited outcome semantics) and enter no cost mean, so
+	// without this counter an arm with total model failure but routine human
+	// rescue would look merely quiet. HumanCostSum is the recorded review
+	// spend on those jobs. Visibility only: no automatic suspension fires on
+	// these (operator judgment + exploration-budget dynamics handle the trap;
+	// see the human-trap fixture).
+	HumanFixed   int     `json:"human_fixed"`
+	HumanCostSum float64 `json:"human_cost_sum"`
 	AvgDelayH   float64 `json:"avg_delay_hours"`
 	HasEstimate bool    `json:"has_estimate"`
 }
@@ -55,6 +71,20 @@ func armHealth(evs []outcome.OutcomeEvent, arm string, window int) ArmHealth {
 			if a.AttemptID == ev.DecidingAttemptID {
 				dec = a.ArmID
 				break
+			}
+		}
+		if dec == "" && ev.Status == outcome.StatusAccepted {
+			// Human-fixed job: credit correction burden to every model arm
+			// on the tape (visibility; moves no estimator). The per-arm
+			// window below still only admits decided jobs.
+			for _, a := range ev.Attempts {
+				if a.ArmID == arm {
+					h.HumanFixed++
+					if ev.HumanReviewCostUSD != nil {
+						h.HumanCostSum += *ev.HumanReviewCostUSD
+					}
+					break
+				}
 			}
 		}
 		if dec != arm {
@@ -95,12 +125,19 @@ func armHealth(evs []outcome.OutcomeEvent, arm string, window int) ArmHealth {
 }
 
 func countMetered(ev outcome.OutcomeEvent, h *ArmHealth) {
-	for _, a := range ev.Attempts {
-		if a.CostUSD == nil {
-			h.Unmetered++
-			return
+	// Single counting rule shared with the learner and the evaluator
+	// (outcome.FullyLoadedCost): no third implementation to diverge.
+	// Malformed costs (rejected at settlement, but foldable on replay)
+	// count as incomplete, never as observations.
+	metered, unmetered, err := outcome.FullyLoadedCost(ev)
+	if err != nil || unmetered > 0 {
+		h.Unmetered++
+		if err == nil && metered > 0 {
+			h.PartialJobs++
 		}
+		return
 	}
+	h.MeteredJobs++
 }
 
 // missingShare is the fraction of matured jobs with incomplete costs.
