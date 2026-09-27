@@ -70,6 +70,10 @@ type CommittedDecision struct {
 	ScoreKind        ScoreKind          `json:"score_kind"`
 	LoggingPolicyID  string             `json:"logging_policy_id"`
 	ConfigHash       string             `json:"config_hash"`
+	// CostAware carries the validated cost-aware result when selection ran
+	// under thompson-costaware-v1. Nil for cost-blind decisions (omitempty
+	// keeps every existing fixture byte-identical).
+	CostAware *thompson.CostAwareResult `json:"cost_aware,omitempty"`
 	// Seq is the ledger-side monotonic decision number, assigned on commit.
 	// Readers use it for same-version assertions (contract policy_version).
 	Seq        uint64 `json:"seq"`
@@ -189,6 +193,13 @@ type DecisionStore interface {
 	// Execution returns the latest marker for a decision, if any.
 	Execution(decisionID string) (DecisionExecution, bool)
 	Len() int
+}
+
+// DecisionScanner replays the committed ledger for safety-budget recovery.
+// Implemented by both file and memory stores; absence on a non-empty store
+// fails resume closed (budgets unrecoverable).
+type DecisionScanner interface {
+	Scan(func(CommittedDecision) bool) error
 }
 
 // MemoryDecisionStore is an in-memory DecisionStore for tests.
@@ -510,4 +521,33 @@ func (s *FileDecisionStore) Close() error {
 	err := s.file.Close()
 	s.file = nil
 	return err
+}
+
+// Scan replays committed decisions in Seq order. The callback runs over a
+// copy; returning false stops early.
+func (s *MemoryDecisionStore) Scan(fn func(CommittedDecision) bool) error {
+	s.mu.Lock()
+	cp := make([]CommittedDecision, len(s.decisions))
+	copy(cp, s.decisions)
+	s.mu.Unlock()
+	for _, d := range cp {
+		if !fn(d) {
+			break
+		}
+	}
+	return nil
+}
+
+// Scan replays committed decisions in Seq order (see Memory variant).
+func (s *FileDecisionStore) Scan(fn func(CommittedDecision) bool) error {
+	s.mu.Lock()
+	cp := make([]CommittedDecision, len(s.decisions))
+	copy(cp, s.decisions)
+	s.mu.Unlock()
+	for _, d := range cp {
+		if !fn(d) {
+			break
+		}
+	}
+	return nil
 }

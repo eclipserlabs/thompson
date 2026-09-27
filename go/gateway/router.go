@@ -26,10 +26,32 @@ func DecisionIDFromContext(ctx context.Context) (string, bool) {
 	return v, ok
 }
 
+// SelectionPolicy is the smallest compatible selection interface: the
+// existing *thompson.Policy implements it directly, and the cost-aware
+// gateway wrapper implements it over the validated RuleV2/RuleV3 path.
+// No caller may assume the concrete type; behavior differences are carried
+// by LoggingPolicyID/ConfigHash and the snapshot's CostAware result.
+type SelectionPolicy interface {
+	SelectSnapshot(rng *rand.Rand) (thompson.DecisionSnapshot, error)
+	Record(rng *rand.Rand, id string, reward float64) error
+	PosteriorFor(id string) (thompson.Posterior, bool)
+	TotalPulls() uint64
+	ConfigSnapshot() thompson.Config
+	ConfigHash() string
+	SamplerName() string
+	LoggingPolicyID() string
+	// QualityPolicy exposes the concrete Beta-Bernoulli policy that owns
+	// durable quality learning. For *thompson.Policy it is itself; the
+	// cost-aware wrapper returns its inner quality policy. Learner
+	// construction and recovery always bind to this, never to the wrapper.
+	QualityPolicy() *thompson.Policy
+}
+
 // Router is the deployable routing path: Select -> persist -> Execute -> Reward -> Record -> persist (+ optional shadow).
-// Single Policy instance per process (state_ownership requirement), guarded by policy's own mutex.
+// Single SelectionPolicy instance per process (state_ownership requirement), guarded by policy's own mutex.
 type Router struct {
-	policy     *thompson.Policy
+	instanceID string
+	policy     SelectionPolicy
 	registry   *ProviderRegistry
 	writer     EvidenceWriter
 	decisions  DecisionStore
@@ -38,6 +60,10 @@ type Router struct {
 	outcomes   outcome.OutcomeStore
 	learner    *outcome.Learner
 	mapper     outcome.RewardMapper
+	costBook   *outcome.CostBookV1
+	observer   SettlementObserver
+	safety     *SafetyController
+	operatorAuthHook func(*http.Request) (string, bool)
 	settleAuth func(r *http.Request) bool
 	settleMu   sync.Mutex
 	// persistIssue holds the Unix-nano timestamp of the last request-path
@@ -66,7 +92,13 @@ const (
 )
 
 type RouterConfig struct {
-	Policy   *thompson.Policy
+	// InstanceID binds this process to test/supervised harnesses: when set,
+	// /health reports it (X-Instance-ID) and every request must carry a
+	// matching X-Expect-Instance header or it is refused with 409. Absent
+	// disables both behaviors (legacy-compatible). It authenticates nothing;
+	// it prevents cross-process test interference from EVER looking healthy.
+	InstanceID string
+	Policy   SelectionPolicy
 	Registry *ProviderRegistry
 	Writer   EvidenceWriter
 	// Decisions persists committed decisions before execution. Nil defaults
@@ -86,6 +118,22 @@ type RouterConfig struct {
 	// Mapper converts settled jobs to rewards. Nil means the binary status
 	// default. Rejected in legacy mode.
 	Mapper outcome.RewardMapper
+	// CostBook is the independent cost ledger for cost-aware mode. Nil =
+	// cost-blind (unchanged). Non-nil requires a cost-aware SelectionPolicy
+	// and vice versa: mismatches fail closed at construction, never degrade
+	// silently at request time.
+	CostBook *outcome.CostBookV1
+	// SettleObserver receives every durably settled event (monitoring and
+	// safety, Phase 3). Nil disables observation. Observer errors fail the
+	// settlement (500) so a blind monitor can never mask a safety failure.
+	SettleObserver SettlementObserver
+	// Safety is the durable safety controller. Non-nil wires it as both the
+	// settlement observer (monitoring-driven suspension) and the operator
+	// action backend. Nil disables safety interlocks (cost-blind legacy).
+	Safety *SafetyController
+	// OperatorAuth resolves the operator identity for /v1/operator/*.
+	// Nil rejects every operator action (fail closed).
+	OperatorAuth func(*http.Request) (string, bool)
 	// SettleAuth authorizes POST /v1/outcomes. Required in verified mode:
 	// outcome writes are never unauthenticated.
 	SettleAuth           func(r *http.Request) bool
@@ -141,6 +189,7 @@ func NewRouter(cfg RouterConfig) (*Router, error) {
 		return nil, fmt.Errorf("router: unknown mode %q", string(mode))
 	}
 	rt := &Router{
+		instanceID:  cfg.InstanceID,
 		policy:      cfg.Policy,
 		registry:    cfg.Registry,
 		writer:      cfg.Writer,
@@ -224,6 +273,9 @@ func computeReward(base thompson.RewardPolicy, latency float64, success bool, co
 // ServeHTTP implements V1 integrity order:
 // Select -> DecisionStarted -> Primary Execute -> ExecutionObserved -> Reward -> Record -> DecisionLearned -> Shadow (or Skipped)
 func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if !rt.checkInstance(w, r) {
+		return
+	}
 	canonicalID := generateCanonicalID()
 	externalID := extractExternalID(r)
 	ctx := context.WithValue(r.Context(), decisionIDKey{}, canonicalID)
@@ -321,6 +373,7 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ScoreKind:        scoreKindFor(snap.Config.Selection.Kind, snap.Forced),
 		LoggingPolicyID:  loggingPolicyID,
 		ConfigHash:       configHash,
+		CostAware:        snap.CostAware,
 		OccurredAt:       nowRFC3339Nano(),
 	})
 	if err != nil {
@@ -351,6 +404,7 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		EligibleArmState:        eligibleState,
 		LoggingPolicyID:         loggingPolicyID,
 		LoggingPolicyConfigHash: configHash,
+		CostAware:               snap.CostAware,
 		ExternalRequestID:       externalID,
 		JobID:                   jobID,
 		StrategyID:              rt.strategyID,
@@ -599,6 +653,22 @@ func (rt *Router) notePersistenceIssue() {
 	rt.persistIssue.Store(time.Now().UnixNano())
 }
 
+// checkInstance enforces the run-identity binding: when InstanceID is
+// configured, callers must present the matching X-Expect-Instance header or
+// the request is refused with 409 before touching any state. A wrong-process
+// contact therefore fails loudly instead of landing decisions in a foreign
+// ledger. Unconfigured instances accept everything (legacy behavior).
+func (rt *Router) checkInstance(w http.ResponseWriter, r *http.Request) bool {
+	if rt.instanceID == "" {
+		return true
+	}
+	if r.Header.Get("X-Expect-Instance") != rt.instanceID {
+		http.Error(w, "instance mismatch: request is not addressed to this gateway process", http.StatusConflict)
+		return false
+	}
+	return true
+}
+
 func (rt *Router) HealthHandler(w http.ResponseWriter, r *http.Request) {
 	// Liveness with a degraded window: the process refuses to start unless
 	// required storage opens, and request-time persistence failures already
@@ -608,6 +678,9 @@ func (rt *Router) HealthHandler(w http.ResponseWriter, r *http.Request) {
 	// request path. Settlement validation rejections are client errors, not
 	// storage failures, and do not affect health.)
 	w.Header().Set("Content-Type", "application/json")
+	if rt.instanceID != "" {
+		w.Header().Set("X-Instance-ID", rt.instanceID)
+	}
 	if nanos := rt.persistIssue.Load(); nanos != 0 && time.Since(time.Unix(0, nanos)) < time.Minute {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		_, _ = w.Write([]byte(`{"status":"degraded"}`))

@@ -16,7 +16,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fatal("usage: exp-run <gen|run|all|feasibility|pilot-check> [flags]")
+		fatal("usage: exp-run <gen|run|all|supervised|feasibility|pilot-check> [flags]")
 	}
 	var err error
 	switch os.Args[1] {
@@ -26,12 +26,14 @@ func main() {
 		err = runCmd(os.Args[2:])
 	case "all":
 		err = allCmd(os.Args[2:])
+	case "supervised":
+		err = supervisedCmd(os.Args[2:])
 	case "feasibility":
 		err = feasibilityCmd(os.Args[2:])
 	case "pilot-check":
 		err = pilotCheckCmd(os.Args[2:])
 	default:
-		fatal("unknown subcommand %q (gen|run|all|feasibility|pilot-check)", os.Args[1])
+		fatal("unknown subcommand %q (gen|run|all|supervised|feasibility|pilot-check)", os.Args[1])
 	}
 	if err != nil {
 		fatal("%v", err)
@@ -184,6 +186,7 @@ type runFlags struct {
 	// --acknowledge carries the frozen content hash (explicit sign-off).
 	pilotConfig string
 	acknowledge string
+	opToken     string
 }
 
 func runFlagSet(name string) (*flag.FlagSet, *runFlags) {
@@ -202,6 +205,7 @@ func runFlagSet(name string) (*flag.FlagSet, *runFlags) {
 	fs.Uint64Var(&f.selSeed, "selection-seed", 0, "fixed gateway selection seed base (0 = time-seeded; required for reproducible dry runs)")
 	fs.StringVar(&f.pilotConfig, "pilot-config", "", "frozen pilot configuration path (optional; when set, --acknowledge is required)")
 	fs.StringVar(&f.acknowledge, "acknowledge", "", "frozen pilot content hash sign-off (required with --pilot-config)")
+	fs.StringVar(&f.opToken, "operator-token", "", "operator credential for supervised runs (required by supervised)")
 	return fs, f
 }
 

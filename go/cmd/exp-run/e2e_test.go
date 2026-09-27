@@ -23,13 +23,19 @@ var (
 	// e2ePortBase allocates disjoint loopback port blocks per test cluster.
 	// Fixed ports let zombies from killed runs hijack health checks: a new
 	// gateway would boot "successfully" against a stale process serving the
-	// wrong files. Unique bases per cluster remove the collision class.
+	// wrong files. Unique bases per cluster remove the intra-process
+	// collision class; the PID-scoped stride below separates concurrent test
+	// PROCESSES (race and compat suites run side by side in CI); and the
+	// INSTANCE_ID handshake turns any residual collision into a loud boot
+	// failure instead of silent cross-talk.
 	e2ePortBase atomic.Int64
 )
 
 func nextPortBases() (pubBase, settleBase int) {
-	base := 22000 + int(e2ePortBase.Add(1))*100
-	return base, base + 50
+	procBlock := int64(os.Getpid() % 32)
+	slot := e2ePortBase.Add(1) % 8
+	base := 22000 + procBlock*800 + slot*100
+	return int(base), int(base) + 50
 }
 
 func TestMain(m *testing.M) {
@@ -122,8 +128,20 @@ func TestE2EPublicCannotSettle(t *testing.T) {
 		t.Fatal(err)
 	}
 	resp2.Body.Close()
-	if resp2.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("unauthenticated settle=%d want 401", resp2.StatusCode)
+	// No instance header on an instance-bound gateway: refused as
+	// unaddressed (409) before auth is even consulted.
+	if resp2.StatusCode != http.StatusConflict {
+		t.Fatalf("unaddressed settle=%d want 409", resp2.StatusCode)
+	}
+	// Addressed but unauthenticated: 401 as before.
+	req.Header.Set("X-Expect-Instance", g.instanceID)
+	resp3, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp3.Body.Close()
+	if resp3.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated settle=%d want 401", resp3.StatusCode)
 	}
 }
 

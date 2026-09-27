@@ -66,12 +66,31 @@ func (rt *Router) initVerifiedSettlement(cfg RouterConfig) error {
 	}
 	learner := cfg.Learner
 	if learner == nil {
-		learner = outcome.NewLearner(cfg.Policy, mapper, cfg.Outcomes.Events)
+		learner = outcome.NewLearner(cfg.Policy.QualityPolicy(), mapper, cfg.Outcomes.Events)
+	}
+	// Cost-aware binding is bidirectional and explicit: a cost book without
+	// a cost-aware policy (or vice versa) fails closed here, never degrades
+	// silently at request time into cost-blind learning under a cost-aware
+	// identity (or cost learning nobody selects on).
+	isCostAware := cfg.Policy.LoggingPolicyID() == thompson.CostAwarePolicyID
+	if cfg.CostBook != nil && !isCostAware {
+		return fmt.Errorf("router: cost book requires a cost-aware selection policy, got %q", cfg.Policy.LoggingPolicyID())
+	}
+	if cfg.CostBook == nil && isCostAware {
+		return fmt.Errorf("router: cost-aware selection policy requires a cost book (refusing silent cost-blind operation)")
 	}
 	rt.outcomes = cfg.Outcomes
 	rt.learner = learner
 	rt.mapper = mapper
+	rt.costBook = cfg.CostBook
+	rt.safety = cfg.Safety
+	if cfg.Safety != nil && cfg.SettleObserver == nil {
+		rt.observer = cfg.Safety
+	} else {
+		rt.observer = cfg.SettleObserver
+	}
 	rt.settleAuth = cfg.SettleAuth
+	rt.operatorAuthHook = cfg.OperatorAuth
 	return nil
 }
 
@@ -86,6 +105,9 @@ func (rt *Router) SettleHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !rt.checkInstance(w, r) {
 		return
 	}
 	if rt.settleAuth != nil && !rt.settleAuth(r) {
@@ -124,15 +146,42 @@ func (rt *Router) SettleHandler(w http.ResponseWriter, r *http.Request) {
 	// so the applied/duplicate flags describe the operation that actually
 	// occurred: a redelivery of the latest version succeeds idempotently
 	// when its content matches and fails as a conflict otherwise.
+	// F2 atomicity at the gateway: malformed costs are refused BEFORE the
+	// event is submitted, so neither the ledger nor either estimator moves.
+	if rt.costBook != nil {
+		if err := outcome.ValidateCosts(ev); err != nil {
+			http.Error(w, fmt.Sprintf("cost refused: %v", err), http.StatusBadRequest)
+			return
+		}
+	}
 	rt.settleMu.Lock()
 	alreadyLatest := isAlreadyLatest(rt.outcomes, ev)
 	learned, err := outcome.Settle(rt.outcomes, rt.learner, ev)
+	var bookErr error
+	if err == nil && rt.costBook != nil {
+		_, bookErr = rt.costBook.Apply(ev, rt.outcomes.Events)
+	}
 	rt.settleMu.Unlock()
 	if err != nil {
 		// Store-level conflict/stale/gap or learner error: accepted history
 		// is untouched (Submit/Apply commit nothing on error).
 		http.Error(w, fmt.Sprintf("settlement rejected: %v", err), http.StatusConflict)
 		return
+	}
+	if bookErr != nil {
+		// Ledger + quality moved; cost refused. Loud 500 (not silent):
+		// recovery rebuilds the book deterministically from the ledger,
+		// healing the divergence (see RecoverVerifiedLearning).
+		rt.notePersistenceIssue()
+		http.Error(w, fmt.Sprintf("cost ledger refused: %v", bookErr), http.StatusInternalServerError)
+		return
+	}
+	if rt.observer != nil {
+		if err := rt.observer.ObserveSettlement(ev); err != nil {
+			rt.notePersistenceIssue()
+			http.Error(w, fmt.Sprintf("settlement observer refused: %v", err), http.StatusInternalServerError)
+			return
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(settleResponse{
@@ -202,11 +251,19 @@ func (rt *Router) RecoverVerifiedLearning(ckptPath string) error {
 	if err != nil {
 		return err
 	}
-	restored, err := outcome.Resume(rt.policy, rt.outcomes.Events(), cp, rt.mapper, rt.outcomes.Events)
+	restored, err := outcome.Resume(rt.policy.QualityPolicy(), rt.outcomes.Events(), cp, rt.mapper, rt.outcomes.Events)
 	if err != nil {
 		return err
 	}
 	rt.learner = restored
+	if rt.costBook != nil {
+		// Deterministic cost rebuild from the authoritative ledger heals any
+		// ledger/book divergence (e.g. a book refusal after Submit): both
+		// estimators restart from exactly the same history.
+		if _, err := rt.costBook.Rebuild(rt.outcomes.Events()); err != nil {
+			return fmt.Errorf("router: cost-book recovery rebuild: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -217,5 +274,11 @@ func (rt *Router) CheckpointVerifiedLearning(ckptPath string) error {
 	}
 	rt.settleMu.Lock()
 	defer rt.settleMu.Unlock()
-	return outcome.SaveCheckpoint(ckptPath, rt.learner.CheckpointOf(rt.outcomes.Len()))
+	if err := outcome.SaveCheckpoint(ckptPath, rt.learner.CheckpointOf(rt.outcomes.Len())); err != nil {
+		return err
+	}
+	if rt.costBook != nil {
+		return outcome.SaveCostCheckpoint(ckptPath+".cost.json", rt.costBook.Snapshot())
+	}
+	return nil
 }

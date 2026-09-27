@@ -34,7 +34,12 @@ type DecisionSnapshot struct {
 	// Config is the policy config in force at selection time.
 	Config Config
 	// ConfigHash is hashConfig(Config): the evidence identifier for Config.
+	// Cost-aware selections replace it with the combined quality+objective
+	// hash (see CombinedConfigHash); cost-blind selections keep hashConfig.
 	ConfigHash string
+	// CostAware carries the validated cost-aware outcome when selection ran
+	// under thompson-costaware-v1 (RuleV2+). Nil for cost-blind selections.
+	CostAware *CostAwareResult
 }
 
 // SelectSnapshot atomically selects an arm and captures the full policy state

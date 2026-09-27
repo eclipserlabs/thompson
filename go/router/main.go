@@ -8,7 +8,9 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -49,10 +51,21 @@ type appConfig struct {
 	// checkpointEvery cadences verified-learning checkpoints; <=0 disables.
 	checkpointEvery time.Duration
 
+	// instanceID binds test/supervised harnesses to this exact process
+	// (X-Instance-ID on health, X-Expect-Instance required per request).
+	// Empty disables both (legacy-compatible).
+	instanceID    string
 	decisionsPath string
 	outcomesPath  string
 	settleToken   string
 	settleAddr    string
+	// Cost-aware experimental mode. COSTAWARE=1 requires verified mode plus
+	// an explicit frozen safety configuration; it can never be enabled
+	// through legacy defaults (empty/missing COSTAWARE stays cost-blind).
+	costAware     bool
+	safetyPath    string
+	safetyConfig  string
+	operatorToken string
 }
 
 // loadConfig reads the environment. It never touches the network or disk:
@@ -81,6 +94,7 @@ func loadConfig(getenv func(string) string) (appConfig, error) {
 	if len(c.arms) == 0 {
 		return c, fmt.Errorf("router: no arms configured")
 	}
+	c.instanceID = getenv("INSTANCE_ID")
 	c.providerURLs = make(map[string]string)
 	for _, arm := range c.arms {
 		key := "PROVIDER_URL_" + strings.ToUpper(strings.ReplaceAll(strings.ReplaceAll(arm, "/", "_"), "-", "_"))
@@ -169,6 +183,21 @@ func loadConfig(getenv func(string) string) (appConfig, error) {
 			c.checkpointEvery = d
 		}
 	}
+	// Cost-aware experimental mode is validated OUTSIDE the verified-only
+	// block: legacy mode + COSTAWARE must fail (no silent coexistence), and
+	// missing safety inputs must fail in every mode.
+	c.costAware = getenv("COSTAWARE") == "1"
+	c.safetyPath = getenv("SAFETY_PATH")
+	c.safetyConfig = getenv("SAFETY_CONFIG")
+	c.operatorToken = getenv("OPERATOR_TOKEN")
+	if c.costAware {
+		if c.mode != gateway.VerifiedMode {
+			return c, fmt.Errorf("router: COSTAWARE=1 requires ROUTER_MODE=verified (refusing silent cost-blind coexistence)")
+		}
+		if c.safetyConfig == "" || c.safetyPath == "" || c.operatorToken == "" {
+			return c, fmt.Errorf("router: COSTAWARE=1 requires SAFETY_CONFIG, SAFETY_PATH and OPERATOR_TOKEN")
+		}
+	}
 	return c, nil
 }
 
@@ -232,6 +261,7 @@ func buildRouter(cfg appConfig) (*gateway.Router, func(), error) {
 	}
 
 	rc := gateway.RouterConfig{
+		InstanceID:           cfg.instanceID,
 		Policy:               policy,
 		Registry:             registry,
 		Writer:               writer,
@@ -266,6 +296,12 @@ func buildRouter(cfg appConfig) (*gateway.Router, func(), error) {
 		rc.Decisions = decisions
 		rc.Outcomes = outcomes
 		rc.SettleAuth = bearerAuth(cfg.settleToken)
+		if cfg.costAware {
+			if err := wireCostAware(cfg, &rc, decisions, outcomes, &cleanup); err != nil {
+				cleanup()
+				return nil, nil, err
+			}
+		}
 		switch cfg.mapper {
 		case "", "binary":
 		case "noop":
@@ -306,6 +342,12 @@ func publicMux(router *gateway.Router) *http.ServeMux {
 	mux.HandleFunc("/v1/outcomes", func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "settlement is not served on the public listener", http.StatusNotFound)
 	})
+	mux.HandleFunc("/v1/operator/suspend", func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "operator actions are not served on the public listener", http.StatusNotFound)
+	})
+	mux.HandleFunc("/v1/operator/resume", func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "operator actions are not served on the public listener", http.StatusNotFound)
+	})
 	mux.Handle("/", router)
 	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -319,6 +361,8 @@ func internalMux(router *gateway.Router) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", router.HealthHandler)
 	mux.HandleFunc("/v1/outcomes", router.SettleHandler)
+	mux.HandleFunc("/v1/operator/suspend", router.SuspendHandler)
+	mux.HandleFunc("/v1/operator/resume", router.ResumeHandler)
 	return mux
 }
 
@@ -435,3 +479,123 @@ func shutdown(srv *servers, cfg appConfig, router *gateway.Router, cleanup func(
 	}
 	cleanup()
 }
+
+// wireCostAware builds the validated cost-aware stack over the verified-mode
+// stores: frozen safety config, durable safety controller, cost book, and
+// cost-aware selection policy with operator auth. Every failure refuses
+// startup (fail closed); cost-aware mode can never half-enable.
+func wireCostAware(cfg appConfig, rc *gateway.RouterConfig, decisions *gateway.FileDecisionStore, outcomes *outcome.FileOutcomeStore, cleanup *func()) error {
+	raw, err := os.ReadFile(cfg.safetyConfig)
+	if err != nil {
+		return fmt.Errorf("router: read SAFETY_CONFIG: %w", err)
+	}
+	var scfg gateway.SafetyConfig
+	if err := jsonUnmarshal(raw, &scfg); err != nil {
+		return fmt.Errorf("router: parse SAFETY_CONFIG: %w", err)
+	}
+	if err := scfg.Validate(); err != nil {
+		return fmt.Errorf("router: %w", err)
+	}
+	for _, a := range cfg.arms {
+		found := false
+		for _, s := range scfg.Arms {
+			if s == a {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("router: binary arm %q is not prequalified in SAFETY_CONFIG (unapproved traffic refused)", a)
+		}
+	}
+	safetyStore, err := gateway.NewSafetyStore(cfg.safetyPath)
+	if err != nil {
+		return fmt.Errorf("router: %w", err)
+	}
+	prevCleanup := *cleanup
+	*cleanup = func() {
+		_ = safetyStore.Close()
+		prevCleanup()
+	}
+	cfgHash, err := safetyConfigHash(raw)
+	if err != nil {
+		return err
+	}
+	safety, err := gateway.NewSafetyController(scfg, cfgHash, safetyStore, decisions, outcomes)
+	if err != nil {
+		return fmt.Errorf("router: safety controller: %w", err)
+	}
+	quality := thompson.NewDefault(scfg.Arms...)
+	book := outcome.NewCostBookV1(scfg.Arms)
+	cacfg := thompson.CostAwareConfig{
+		QualityFloor: scfg.QualityFloor, MinMeteredN: 2,
+		ColdStartPulls: scfg.ColdStartPulls, Epsilon: 1e-3,
+	}
+	cap, err := gateway.NewCostAwarePolicy(quality, book, cacfg, safety)
+	if err != nil {
+		return fmt.Errorf("router: %w", err)
+	}
+	rc.Policy = cap
+	rc.Learner = outcome.NewLearner(quality, outcome.BinaryStatusMapper{}, outcomes.Events)
+	rc.CostBook = book
+	rc.Safety = safety
+	rc.OperatorAuth = operatorBearerAuth(cfg.operatorToken)
+	log.Printf("cost-aware experimental mode: policy=%s arms=%v fallback=%s", cap.LoggingPolicyID(), scfg.Arms, scfg.FallbackArm)
+	return nil
+}
+
+func jsonUnmarshal(b []byte, v any) error {
+	return json.Unmarshal(b, v)
+}
+
+func safetyConfigHash(raw []byte) (string, error) {
+	// Canonicalize before hashing: the frozen identity must depend on the
+	// CONFIGURATION, not its serialization. Indented, compact, or
+	// key-reordered documents describing the same envelope hash identically,
+	// so legitimate resume can never fail on formatting drift. (encoding/json
+	// marshals structs in field order deterministically; SafetyConfig has no
+	// maps.) Note: this rotates hashes issued by the earlier raw-bytes rule;
+	// no production safety state exists under the old rule (synthetic runs
+	// only), so no migration is provided — old logs refuse resume loudly.
+	var cfg gateway.SafetyConfig
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		return "", fmt.Errorf("router: SAFETY_CONFIG is not JSON: %w", err)
+	}
+	if err := cfg.Validate(); err != nil {
+		return "", fmt.Errorf("router: %w", err)
+	}
+	canonical, err := json.Marshal(cfg)
+	if err != nil {
+		return "", fmt.Errorf("router: canonicalize safety config: %w", err)
+	}
+	sum := sha256Sum(canonical)
+	return fmt.Sprintf("safety-v1-%x", sum[:8]), nil
+}
+
+// operatorBearerAuth resolves the operator identity from a dedicated
+// OPERATOR_TOKEN bearer credential (distinct from SETTLE_TOKEN).
+// Format: "Bearer <token>:<operator-id>". Empty token never authenticates.
+func operatorBearerAuth(token string) func(*http.Request) (string, bool) {
+	return func(r *http.Request) (string, bool) {
+		got := r.Header.Get("Authorization")
+		const prefix = "Bearer "
+		if !strings.HasPrefix(got, prefix) {
+			return "", false
+		}
+		cred := got[len(prefix):]
+		sep := strings.LastIndex(cred, ":")
+		if sep < 0 {
+			return "", false
+		}
+		tok, op := cred[:sep], cred[sep+1:]
+		if tok == "" || op == "" || token == "" || len(tok) != len(token) {
+			return "", false
+		}
+		if subtle.ConstantTimeCompare([]byte(tok), []byte(token)) != 1 {
+			return "", false
+		}
+		return op, true
+	}
+}
+
+func sha256Sum(b []byte) [32]byte { return sha256.Sum256(b) }

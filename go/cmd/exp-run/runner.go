@@ -57,6 +57,14 @@ type RunnerConfig struct {
 	// RNG identically per treatment (base+index). Required for reproducible
 	// dry runs; production omits it (time-seeded).
 	SelectionSeed uint64
+	// AfterJob, when non-nil, runs after each completed job (supervised
+	// experiments use it for operator interventions). Errors abort the run.
+	AfterJob func(idx, doneJobs int) error
+	// SafetyConfigs carries frozen per-treatment safety envelopes (raw JSON)
+	// for CostAware treatments. Absent entry + CostAware=true fails closed.
+	SafetyConfigs map[string][]byte
+	// OperatorToken credentials operator actions in supervised runs.
+	OperatorToken string
 }
 
 // Runner executes the experiment: assign → execute → verify → settle, with
@@ -194,10 +202,30 @@ func (r *Runner) Boot() error {
 		if r.cfg.SelectionSeed != 0 {
 			selSeed = strconv.FormatUint(r.cfg.SelectionSeed+uint64(i), 10)
 		}
-		g, err := SpawnGateway(r.cfg.RouterBin, t.ID, dir,
-			"127.0.0.1:"+itoa(r.cfg.PubPorts[i]),
-			"127.0.0.1:"+itoa(r.cfg.SettlePorts[i]),
-			r.cfg.Token, arms, t.ID, mapper, selSeed, r.cfg.Timeout)
+		var g *GatewayProc
+		var err error
+		if t.CostAware {
+			scfg, ok := r.cfg.SafetyConfigs[t.ID]
+			if !ok {
+				r.Shutdown()
+				return fmt.Errorf("exp-run: treatment %s is cost-aware but has no frozen safety config (refusing)", t.ID)
+			}
+			scPath := dir + "/safety.json"
+			if err := os.WriteFile(scPath, scfg, 0o600); err != nil {
+				r.Shutdown()
+				return err
+			}
+			g, err = SpawnCostAwareGateway(r.cfg.RouterBin, t.ID, dir,
+				"127.0.0.1:"+itoa(r.cfg.PubPorts[i]),
+				"127.0.0.1:"+itoa(r.cfg.SettlePorts[i]),
+				r.cfg.Token, arms, t.ID, selSeed,
+				scPath, dir+"/safety.jsonl", r.cfg.OperatorToken, r.cfg.Timeout)
+		} else {
+			g, err = SpawnGateway(r.cfg.RouterBin, t.ID, dir,
+				"127.0.0.1:"+itoa(r.cfg.PubPorts[i]),
+				"127.0.0.1:"+itoa(r.cfg.SettlePorts[i]),
+				r.cfg.Token, arms, t.ID, mapper, selSeed, r.cfg.Timeout)
+		}
 		if err != nil {
 			r.Shutdown()
 			return err
@@ -411,6 +439,11 @@ func (r *Runner) Run(ctx context.Context) error {
 			return err
 		}
 		r.doneJobs++
+		if r.cfg.AfterJob != nil {
+			if err := r.cfg.AfterJob(idx, r.doneJobs); err != nil {
+				return err
+			}
+		}
 		if r.cfg.CrashAfter > 0 && r.doneJobs >= r.cfg.CrashAfter {
 			// Deterministic crash injection (resume-proof testing only):
 			// SIGKILL the gateways with no graceful checkpoint, then die
@@ -517,6 +550,15 @@ func (r *Runner) runJob(ctx context.Context, job ManifestJob, asg harness.Assign
 		}
 		if rr.DecisionID == "" {
 			return fmt.Errorf("exp-run: job %q attempt %d: gateway returned no decision", job.JobID, att)
+		}
+		if rr.HTTPStatus < 200 || rr.HTTPStatus >= 300 {
+			// Explicit gateway refusal (e.g. safety fail-closed 503): the
+			// response headers still carry an X-Decision-ID (set before
+			// selection runs), but NOTHING was committed. Settling it
+			// would 404 against an empty lookup and corrupt the join, so
+			// abort visibly instead. Assignment + attempted rows already
+			// persisted preserve intent-to-treat for operator triage.
+			return fmt.Errorf("exp-run: job %q attempt %d: gateway refused with status %d (no decision committed, not settled)", job.JobID, att, rr.HTTPStatus)
 		}
 		obs := ObservedAttempt{DecisionID: rr.DecisionID, Arm: rr.SelectedArm,
 			Transport: transportOf(rr.HTTPStatus), HTTPStatus: rr.HTTPStatus}
