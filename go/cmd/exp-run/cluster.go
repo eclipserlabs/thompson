@@ -241,7 +241,13 @@ func spawnWithEnv(routerBin, treatment, dir, publicAddr, settleAddr, token, arms
 		}
 		if time.Now().After(deadline) {
 			_ = cmd.Process.Kill()
-			_, _ = cmd.Process.Wait()
+			_, waitErr := cmd.Process.Wait()
+			// Report the child exit status: a fast silent death (bad
+			// config, missing files, signal) looks identical to a hang
+			// from the health poll alone.
+			if waitErr != nil {
+				return nil, fmt.Errorf("exp-run: gateway %s unhealthy (child exit: %v): %s", treatment, waitErr, stderr.String())
+			}
 			return nil, fmt.Errorf("exp-run: gateway %s unhealthy: %s", treatment, stderr.String())
 		}
 		time.Sleep(200 * time.Millisecond)
