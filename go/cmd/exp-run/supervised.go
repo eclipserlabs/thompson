@@ -177,7 +177,7 @@ func executeSupervised(f *runFlags, m *Manifest, demoStop bool) error {
 			}
 			switch {
 			case doneJobs == stopAt:
-			 code, err := g.Operator("suspend", "", "supervised demo: emergency stop", opToken, "demo-operator")
+				code, err := g.Operator("suspend", "", "supervised demo: emergency stop", opToken, "demo-operator")
 				if err != nil || code != 200 {
 					return fmt.Errorf("exp-run: demo stop failed: %v code=%d", err, code)
 				}

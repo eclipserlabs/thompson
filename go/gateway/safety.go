@@ -111,14 +111,14 @@ type armSafety struct {
 // policy/book/store, then safety. Safety code never acquires an outer lock
 // while held (event slices are passed in; stores are only read).
 type SafetyController struct {
-	mu       sync.Mutex
-	cfg      SafetyConfig
-	cfgHash  string
-	arms     map[string]*armSafety
-	emerg    bool
-	store    *SafetyStore
+	mu        sync.Mutex
+	cfg       SafetyConfig
+	cfgHash   string
+	arms      map[string]*armSafety
+	emerg     bool
+	store     *SafetyStore
 	decisions DecisionStore
-	outcomes outcome.OutcomeStore
+	outcomes  outcome.OutcomeStore
 }
 
 // NewSafetyController builds the controller over a durable event store,

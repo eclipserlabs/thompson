@@ -82,7 +82,7 @@ func meteredAttempt(id string, seq uint, arm string, cost float64, verified outc
 		AttemptID: id, Seq: seq, ExecutorID: arm, ArmID: arm,
 		Transport: outcome.TransportOK, LatencyMs: 150, CostUSD: &cost,
 		Validation: outcome.ValidationPass, Verified: verified,
-		VerifiedBy:  "checker:ca-v1",
+		VerifiedBy: "checker:ca-v1",
 	}
 }
 
@@ -297,8 +297,8 @@ func TestGatewayCostAwareRestartRecovery(t *testing.T) {
 	did, jid, arm := rec.Header().Get("X-Decision-ID"), rec.Header().Get("X-Job-ID"), rec.Header().Get("X-Selected-Arm")
 	ev := outcome.OutcomeEvent{SchemaVersion: outcome.SchemaVersion, EventType: outcome.EventJobSettled,
 		DecisionID: did, JobID: jid, StrategyID: "t3", Version: 1,
-		Status:     outcome.StatusAccepted,
-		Attempts:   []outcome.Attempt{meteredAttempt(jid+"-a0", 0, arm, 0.02, outcome.VerifiedSuccess)},
+		Status:            outcome.StatusAccepted,
+		Attempts:          []outcome.Attempt{meteredAttempt(jid+"-a0", 0, arm, 0.02, outcome.VerifiedSuccess)},
 		DecidingAttemptID: jid + "-a0", VerifiedBy: "checker:ca-v1", OccurredAt: "2026-01-05T00:00:00Z"}
 	bb, _ := json.Marshal(ev)
 	srec := httptest.NewRecorder()

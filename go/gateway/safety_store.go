@@ -119,20 +119,35 @@ func (s *SafetyStore) readAll() ([]SafetyEvent, error) {
 	}
 	defer f.Close()
 	var out []SafetyEvent
+	var lines [][]byte
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 	for sc.Scan() {
-		line := sc.Bytes()
+		cp := make([]byte, len(sc.Bytes()))
+		copy(cp, sc.Bytes())
+		lines = append(lines, cp)
+	}
+	if err := sc.Err(); err != nil {
+		return nil, fmt.Errorf("safety: read: %w", err)
+	}
+	// Torn-tail tolerance (mirrors the outcome/decision ledgers): appends
+	// are single-line JSON + fsync, so only the FINAL line may be partial
+	// (crash mid-write). Truncate it; corruption anywhere else fails closed
+	// instead of guessing which operator actions happened.
+	for i, line := range lines {
 		if len(line) == 0 {
 			continue
 		}
 		var ev SafetyEvent
 		if err := json.Unmarshal(line, &ev); err != nil {
-			return nil, fmt.Errorf("safety: bad event line: %w", err)
+			if i == len(lines)-1 {
+				break
+			}
+			return nil, fmt.Errorf("safety: bad event line %d: %w", i, err)
 		}
 		out = append(out, ev)
 	}
-	return out, sc.Err()
+	return out, nil
 }
 
 func dirOf(path string) string {

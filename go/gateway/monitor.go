@@ -13,13 +13,13 @@ import (
 // verification cannot inflate apparent quality. AvgDelayH reports feedback
 // latency so operators distinguish health from stale data.
 type ArmHealth struct {
-	Arm         string  `json:"arm"`
-	Window      int     `json:"window"`
-	Matured     int     `json:"matured"`
-	Accepted    int     `json:"accepted"`
-	AcceptRate  float64 `json:"accept_rate"`
-	Censored    int     `json:"censored"`
-	Unmetered   int     `json:"unmetered"`
+	Arm        string  `json:"arm"`
+	Window     int     `json:"window"`
+	Matured    int     `json:"matured"`
+	Accepted   int     `json:"accepted"`
+	AcceptRate float64 `json:"accept_rate"`
+	Censored   int     `json:"censored"`
+	Unmetered  int     `json:"unmetered"`
 	// MeteredJobs counts fully metered matured jobs; PartialJobs counts
 	// matured jobs with SOME metered attempt cost but incomplete totals.
 	// Both are accounting visibility: partial costs are preserved for
@@ -36,8 +36,8 @@ type ArmHealth struct {
 	// see the human-trap fixture).
 	HumanFixed   int     `json:"human_fixed"`
 	HumanCostSum float64 `json:"human_cost_sum"`
-	AvgDelayH   float64 `json:"avg_delay_hours"`
-	HasEstimate bool    `json:"has_estimate"`
+	AvgDelayH    float64 `json:"avg_delay_hours"`
+	HasEstimate  bool    `json:"has_estimate"`
 }
 
 // armHealth folds the authoritative outcome events (the same source the

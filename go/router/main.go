@@ -58,9 +58,9 @@ type appConfig struct {
 	// Cost-aware experimental mode. COSTAWARE=1 requires verified mode plus
 	// an explicit frozen safety configuration; it can never be enabled
 	// through legacy defaults (empty/missing COSTAWARE stays cost-blind).
-	costAware    bool
-	safetyPath   string
-	safetyConfig string
+	costAware     bool
+	safetyPath    string
+	safetyConfig  string
 	operatorToken string
 }
 
@@ -161,19 +161,7 @@ func loadConfig(getenv func(string) string) (appConfig, error) {
 		if !isLoopbackAddr(c.settleAddr) && getenv("ALLOW_PUBLIC_SETTLE") != "1" {
 			return c, fmt.Errorf("router: SETTLE_ADDR %q is not loopback: set ALLOW_PUBLIC_SETTLE=1 to acknowledge public settlement exposure", c.settleAddr)
 		}
-		c.costAware = getenv("COSTAWARE") == "1"
-	c.safetyPath = getenv("SAFETY_PATH")
-	c.safetyConfig = getenv("SAFETY_CONFIG")
-	c.operatorToken = getenv("OPERATOR_TOKEN")
-	if c.costAware {
-		if c.mode != gateway.VerifiedMode {
-			return c, fmt.Errorf("router: COSTAWARE=1 requires ROUTER_MODE=verified (refusing silent cost-blind coexistence)")
-		}
-		if c.safetyConfig == "" || c.safetyPath == "" || c.operatorToken == "" {
-			return c, fmt.Errorf("router: COSTAWARE=1 requires SAFETY_CONFIG, SAFETY_PATH and OPERATOR_TOKEN")
-		}
-	}
-	c.mapper = getenv("MAPPER")
+		c.mapper = getenv("MAPPER")
 		if v := getenv("SELECTION_SEED"); v != "" {
 			sd, err := strconv.ParseUint(v, 10, 64)
 			if err != nil {
@@ -188,6 +176,21 @@ func loadConfig(getenv func(string) string) (appConfig, error) {
 				return c, fmt.Errorf("router: bad CHECKPOINT_INTERVAL: %w", err)
 			}
 			c.checkpointEvery = d
+		}
+	}
+	// Cost-aware experimental mode is validated OUTSIDE the verified-only
+	// block: legacy mode + COSTAWARE must fail (no silent coexistence), and
+	// missing safety inputs must fail in every mode.
+	c.costAware = getenv("COSTAWARE") == "1"
+	c.safetyPath = getenv("SAFETY_PATH")
+	c.safetyConfig = getenv("SAFETY_CONFIG")
+	c.operatorToken = getenv("OPERATOR_TOKEN")
+	if c.costAware {
+		if c.mode != gateway.VerifiedMode {
+			return c, fmt.Errorf("router: COSTAWARE=1 requires ROUTER_MODE=verified (refusing silent cost-blind coexistence)")
+		}
+		if c.safetyConfig == "" || c.safetyPath == "" || c.operatorToken == "" {
+			return c, fmt.Errorf("router: COSTAWARE=1 requires SAFETY_CONFIG, SAFETY_PATH and OPERATOR_TOKEN")
 		}
 	}
 	return c, nil
