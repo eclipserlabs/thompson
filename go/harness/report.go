@@ -451,11 +451,19 @@ func Analyze(records []JobRecord, cfg ReportConfig, baseline, candidate string, 
 		rep.Treatments[n] = st
 	}
 
-	// Gates.
+	// Gates. Treatment iteration is sorted: ranging over the map directly
+	// would emit gate rows (and hence reasons) in nondeterministic order,
+	// breaking byte-identical report reproducibility across runs.
+	txNames := make([]string, 0, len(rep.Treatments))
+	for n := range rep.Treatments {
+		txNames = append(txNames, n)
+	}
+	sort.Strings(txNames)
 	if ok, detail := checkAllocation(records, cfg); !ok {
 		rep.Gates = append(rep.Gates, GateResult{"allocation", false, detail})
 	}
-	for n, st := range rep.Treatments {
+	for _, n := range txNames {
+		st := rep.Treatments[n]
 		if st.Matured < cfg.MinJobs {
 			rep.Gates = append(rep.Gates, GateResult{"min-jobs-" + n, false,
 				fmt.Sprintf("%d matured < %d", st.Matured, cfg.MinJobs)})
