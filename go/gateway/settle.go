@@ -83,8 +83,14 @@ func (rt *Router) initVerifiedSettlement(cfg RouterConfig) error {
 	rt.learner = learner
 	rt.mapper = mapper
 	rt.costBook = cfg.CostBook
-	rt.observer = cfg.SettleObserver
+	rt.safety = cfg.Safety
+	if cfg.Safety != nil && cfg.SettleObserver == nil {
+		rt.observer = cfg.Safety
+	} else {
+		rt.observer = cfg.SettleObserver
+	}
 	rt.settleAuth = cfg.SettleAuth
+	rt.operatorAuthHook = cfg.OperatorAuth
 	return nil
 }
 

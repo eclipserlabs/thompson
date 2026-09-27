@@ -195,6 +195,13 @@ type DecisionStore interface {
 	Len() int
 }
 
+// DecisionScanner replays the committed ledger for safety-budget recovery.
+// Implemented by both file and memory stores; absence on a non-empty store
+// fails resume closed (budgets unrecoverable).
+type DecisionScanner interface {
+	Scan(func(CommittedDecision) bool) error
+}
+
 // MemoryDecisionStore is an in-memory DecisionStore for tests.
 type MemoryDecisionStore struct {
 	mu         sync.Mutex
@@ -514,4 +521,33 @@ func (s *FileDecisionStore) Close() error {
 	err := s.file.Close()
 	s.file = nil
 	return err
+}
+
+// Scan replays committed decisions in Seq order. The callback runs over a
+// copy; returning false stops early.
+func (s *MemoryDecisionStore) Scan(fn func(CommittedDecision) bool) error {
+	s.mu.Lock()
+	cp := make([]CommittedDecision, len(s.decisions))
+	copy(cp, s.decisions)
+	s.mu.Unlock()
+	for _, d := range cp {
+		if !fn(d) {
+			break
+		}
+	}
+	return nil
+}
+
+// Scan replays committed decisions in Seq order (see Memory variant).
+func (s *FileDecisionStore) Scan(fn func(CommittedDecision) bool) error {
+	s.mu.Lock()
+	cp := make([]CommittedDecision, len(s.decisions))
+	copy(cp, s.decisions)
+	s.mu.Unlock()
+	for _, d := range cp {
+		if !fn(d) {
+			break
+		}
+	}
+	return nil
 }

@@ -61,6 +61,8 @@ type Router struct {
 	mapper     outcome.RewardMapper
 	costBook   *outcome.CostBookV1
 	observer   SettlementObserver
+	safety     *SafetyController
+	operatorAuthHook func(*http.Request) (string, bool)
 	settleAuth func(r *http.Request) bool
 	settleMu   sync.Mutex
 	// persistIssue holds the Unix-nano timestamp of the last request-path
@@ -118,6 +120,13 @@ type RouterConfig struct {
 	// safety, Phase 3). Nil disables observation. Observer errors fail the
 	// settlement (500) so a blind monitor can never mask a safety failure.
 	SettleObserver SettlementObserver
+	// Safety is the durable safety controller. Non-nil wires it as both the
+	// settlement observer (monitoring-driven suspension) and the operator
+	// action backend. Nil disables safety interlocks (cost-blind legacy).
+	Safety *SafetyController
+	// OperatorAuth resolves the operator identity for /v1/operator/*.
+	// Nil rejects every operator action (fail closed).
+	OperatorAuth func(*http.Request) (string, bool)
 	// SettleAuth authorizes POST /v1/outcomes. Required in verified mode:
 	// outcome writes are never unauthenticated.
 	SettleAuth           func(r *http.Request) bool
