@@ -36,6 +36,10 @@ type TreatmentConfig struct {
 	Arms        []string `json:"arms"`
 	MaxAttempts int      `json:"max_attempts"`
 	Learn       bool     `json:"learn"`
+	// CostAware marks the supervised cost-aware treatment: the runner boots
+	// its gateway with COSTAWARE=1 and a frozen safety configuration.
+	// Absent/false preserves the legacy three-treatment behavior exactly.
+	CostAware bool `json:"cost_aware,omitempty"`
 	// GatewayDescribe only: ports and files are runner flags, not manifest.
 }
 

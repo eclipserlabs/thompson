@@ -16,7 +16,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fatal("usage: exp-run <gen|run|all|feasibility|pilot-check> [flags]")
+		fatal("usage: exp-run <gen|run|all|supervised|feasibility|pilot-check> [flags]")
 	}
 	var err error
 	switch os.Args[1] {
@@ -26,12 +26,14 @@ func main() {
 		err = runCmd(os.Args[2:])
 	case "all":
 		err = allCmd(os.Args[2:])
+	case "supervised":
+		err = supervisedCmd(os.Args[2:])
 	case "feasibility":
 		err = feasibilityCmd(os.Args[2:])
 	case "pilot-check":
 		err = pilotCheckCmd(os.Args[2:])
 	default:
-		fatal("unknown subcommand %q (gen|run|all|feasibility|pilot-check)", os.Args[1])
+		fatal("unknown subcommand %q (gen|run|all|supervised|feasibility|pilot-check)", os.Args[1])
 	}
 	if err != nil {
 		fatal("%v", err)

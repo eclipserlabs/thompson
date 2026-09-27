@@ -189,3 +189,84 @@ func (g *GatewayProc) Settle(ev outcome.OutcomeEvent) (applied, learned bool, er
 	}
 	return out.Applied, out.Learned, nil
 }
+
+// SpawnCostAwareGateway starts a router binary in supervised cost-aware mode:
+// verified learning plus the validated RuleV2/V3 policy, durable safety
+// controller, and operator authentication. All three inputs are required;
+// absence fails closed in the binary (never half-enabled).
+func SpawnCostAwareGateway(routerBin, treatment, dir, publicAddr, settleAddr, token, arms, strategy, selectionSeed, safetyConfigPath, safetyPath, operatorToken string, timeout time.Duration) (*GatewayProc, error) {
+	base, err := spawnWithEnv(routerBin, treatment, dir, publicAddr, settleAddr, token, arms, strategy, "", selectionSeed, map[string]string{
+		"COSTAWARE":      "1",
+		"SAFETY_CONFIG":  safetyConfigPath,
+		"SAFETY_PATH":    safetyPath,
+		"OPERATOR_TOKEN": operatorToken,
+	}, timeout)
+	return base, err
+}
+
+func spawnWithEnv(routerBin, treatment, dir, publicAddr, settleAddr, token, arms, strategy, mapper, selectionSeed string, extra map[string]string, timeout time.Duration) (*GatewayProc, error) {
+	env := append(os.Environ(),
+		"ROUTER_MODE=verified",
+		"STRATEGY_ID="+strategy,
+		"ARMS="+arms,
+		"PORT="+portOf(publicAddr),
+		"SETTLE_ADDR="+settleAddr,
+		"EVIDENCE_PATH="+dir+"/evidence.jsonl",
+		"DECISIONS_PATH="+dir+"/decisions.jsonl",
+		"OUTCOMES_PATH="+dir+"/outcomes.jsonl",
+		"SETTLE_TOKEN="+token,
+		"MAPPER="+mapper,
+		"SELECTION_SEED="+selectionSeed,
+	)
+	for k, v := range extra {
+		env = append(env, k+"="+v)
+	}
+	cmd := exec.Command(routerBin)
+	cmd.Env = env
+	var stderr syncBuffer
+	cmd.Stderr = &stderr
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("exp-run: start gateway %s: %w", treatment, err)
+	}
+	g := &GatewayProc{
+		Treatment: treatment,
+		PublicURL: "http://" + publicAddr,
+		SettleURL: "http://" + settleAddr,
+		Token:     token, Dir: dir, cmd: cmd,
+		client: &http.Client{Timeout: timeout},
+	}
+	deadline := time.Now().Add(timeout)
+	for {
+		resp, err := g.client.Get(g.PublicURL + "/health")
+		if err == nil && resp.StatusCode == http.StatusOK {
+			resp.Body.Close()
+			return g, nil
+		}
+		if err == nil {
+			resp.Body.Close()
+		}
+		if time.Now().After(deadline) {
+			_ = cmd.Process.Kill()
+			_, _ = cmd.Process.Wait()
+			return nil, fmt.Errorf("exp-run: gateway %s unhealthy: %s", treatment, stderr.String())
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+}
+
+// Operator posts an operator action (suspend/resume) to the treatment's
+// internal listener with the operator credential.
+func (g *GatewayProc) Operator(action, arm, reason, operatorToken, operatorID string) (int, error) {
+	body, _ := json.Marshal(map[string]string{"arm": arm, "reason": reason})
+	req, err := http.NewRequest(http.MethodPost, g.SettleURL+"/v1/operator/"+action, bytes.NewReader(body))
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Authorization", "Bearer "+operatorToken+":"+operatorID)
+	resp, err := g.client.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode, nil
+}
