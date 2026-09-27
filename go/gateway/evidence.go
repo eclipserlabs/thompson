@@ -61,6 +61,8 @@ type DecisionStarted struct {
 	// Bandit log record fields for OPE
 	LoggingPolicyID       string `json:"logging_policy_id,omitempty"`
 	LoggingPolicyConfigHash string `json:"logging_policy_config_hash,omitempty"`
+	// CostAware carries the validated cost-aware result (nil cost-blind).
+	CostAware *thompson.CostAwareResult `json:"cost_aware,omitempty"`
 	// Job binding for verified settlement (additive; absent in pre-PR3A rows).
 	JobID      string `json:"job_id,omitempty"`
 	StrategyID string `json:"strategy_id,omitempty"`

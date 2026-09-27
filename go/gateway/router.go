@@ -26,10 +26,31 @@ func DecisionIDFromContext(ctx context.Context) (string, bool) {
 	return v, ok
 }
 
+// SelectionPolicy is the smallest compatible selection interface: the
+// existing *thompson.Policy implements it directly, and the cost-aware
+// gateway wrapper implements it over the validated RuleV2/RuleV3 path.
+// No caller may assume the concrete type; behavior differences are carried
+// by LoggingPolicyID/ConfigHash and the snapshot's CostAware result.
+type SelectionPolicy interface {
+	SelectSnapshot(rng *rand.Rand) (thompson.DecisionSnapshot, error)
+	Record(rng *rand.Rand, id string, reward float64) error
+	PosteriorFor(id string) (thompson.Posterior, bool)
+	TotalPulls() uint64
+	ConfigSnapshot() thompson.Config
+	ConfigHash() string
+	SamplerName() string
+	LoggingPolicyID() string
+	// QualityPolicy exposes the concrete Beta-Bernoulli policy that owns
+	// durable quality learning. For *thompson.Policy it is itself; the
+	// cost-aware wrapper returns its inner quality policy. Learner
+	// construction and recovery always bind to this, never to the wrapper.
+	QualityPolicy() *thompson.Policy
+}
+
 // Router is the deployable routing path: Select -> persist -> Execute -> Reward -> Record -> persist (+ optional shadow).
-// Single Policy instance per process (state_ownership requirement), guarded by policy's own mutex.
+// Single SelectionPolicy instance per process (state_ownership requirement), guarded by policy's own mutex.
 type Router struct {
-	policy     *thompson.Policy
+	policy     SelectionPolicy
 	registry   *ProviderRegistry
 	writer     EvidenceWriter
 	decisions  DecisionStore
@@ -38,6 +59,8 @@ type Router struct {
 	outcomes   outcome.OutcomeStore
 	learner    *outcome.Learner
 	mapper     outcome.RewardMapper
+	costBook   *outcome.CostBookV1
+	observer   SettlementObserver
 	settleAuth func(r *http.Request) bool
 	settleMu   sync.Mutex
 	// persistIssue holds the Unix-nano timestamp of the last request-path
@@ -66,7 +89,7 @@ const (
 )
 
 type RouterConfig struct {
-	Policy   *thompson.Policy
+	Policy   SelectionPolicy
 	Registry *ProviderRegistry
 	Writer   EvidenceWriter
 	// Decisions persists committed decisions before execution. Nil defaults
@@ -86,6 +109,15 @@ type RouterConfig struct {
 	// Mapper converts settled jobs to rewards. Nil means the binary status
 	// default. Rejected in legacy mode.
 	Mapper outcome.RewardMapper
+	// CostBook is the independent cost ledger for cost-aware mode. Nil =
+	// cost-blind (unchanged). Non-nil requires a cost-aware SelectionPolicy
+	// and vice versa: mismatches fail closed at construction, never degrade
+	// silently at request time.
+	CostBook *outcome.CostBookV1
+	// SettleObserver receives every durably settled event (monitoring and
+	// safety, Phase 3). Nil disables observation. Observer errors fail the
+	// settlement (500) so a blind monitor can never mask a safety failure.
+	SettleObserver SettlementObserver
 	// SettleAuth authorizes POST /v1/outcomes. Required in verified mode:
 	// outcome writes are never unauthenticated.
 	SettleAuth           func(r *http.Request) bool
@@ -321,6 +353,7 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ScoreKind:        scoreKindFor(snap.Config.Selection.Kind, snap.Forced),
 		LoggingPolicyID:  loggingPolicyID,
 		ConfigHash:       configHash,
+		CostAware:        snap.CostAware,
 		OccurredAt:       nowRFC3339Nano(),
 	})
 	if err != nil {
@@ -351,6 +384,7 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		EligibleArmState:        eligibleState,
 		LoggingPolicyID:         loggingPolicyID,
 		LoggingPolicyConfigHash: configHash,
+		CostAware:               snap.CostAware,
 		ExternalRequestID:       externalID,
 		JobID:                   jobID,
 		StrategyID:              rt.strategyID,

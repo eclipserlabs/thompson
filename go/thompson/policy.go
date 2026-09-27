@@ -288,6 +288,10 @@ func (p *Policy) LoggingPolicyID() string {
 // SamplerName returns the active sampler's name.
 func (p *Policy) SamplerName() string { return p.sampler.Name() }
 
+// QualityPolicy returns the concrete policy itself, satisfying the gateway
+// SelectionPolicy contract for the cost-blind path.
+func (p *Policy) QualityPolicy() *Policy { return p }
+
 // EligibleArmIDs returns a copy of the current sorted eligible arm IDs.
 // Deterministic iteration order; safe to call concurrently.
 func (p *Policy) EligibleArmIDs() []string {

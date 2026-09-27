@@ -70,6 +70,10 @@ type CommittedDecision struct {
 	ScoreKind        ScoreKind          `json:"score_kind"`
 	LoggingPolicyID  string             `json:"logging_policy_id"`
 	ConfigHash       string             `json:"config_hash"`
+	// CostAware carries the validated cost-aware result when selection ran
+	// under thompson-costaware-v1. Nil for cost-blind decisions (omitempty
+	// keeps every existing fixture byte-identical).
+	CostAware *thompson.CostAwareResult `json:"cost_aware,omitempty"`
 	// Seq is the ledger-side monotonic decision number, assigned on commit.
 	// Readers use it for same-version assertions (contract policy_version).
 	Seq        uint64 `json:"seq"`

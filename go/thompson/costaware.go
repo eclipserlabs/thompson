@@ -1,6 +1,8 @@
 package thompson
 
 import (
+	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"math/rand/v2"
 	"sort"
@@ -20,6 +22,11 @@ const (
 	// ledgers distinguish which guarantee produced each pick.
 	CostAwareRuleV1 = 1
 	CostAwareRuleV2 = 2
+	// CostAwareRuleV3 is RuleV2 plus a safety eligibility mask (prequalified,
+	// non-suspended, budget-holding arms). Masked-out arms are treated as
+	// unqualified in every pool; an empty mask fails closed with an explicit
+	// error instead of selecting. Gateway safety path only.
+	CostAwareRuleV3 = 3
 )
 
 // CostAwareConfig freezes the v1 objective parameters. Every field is a
@@ -52,6 +59,23 @@ func (c CostAwareConfig) Validate() error {
 		return fmt.Errorf("thompson: cost-aware epsilon %v out of (0,1]", c.Epsilon)
 	}
 	return nil
+}
+
+// CombinedConfigHash binds the quality policy config and the cost-aware
+// objective config into one evidence identifier. Either side changing
+// changes the hash; empty cost-aware JSON is rejected, never defaulted.
+func CombinedConfigHash(quality Config, ca CostAwareConfig) string {
+	qb, err := json.Marshal(quality)
+	if err != nil {
+		return ""
+	}
+	cb, err := json.Marshal(ca)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(append(qb, 0x00))
+	sum2 := sha256.Sum256(append(sum[:], cb...))
+	return fmt.Sprintf("costaware-v1-%x", sum2[:8])
 }
 
 // CostAwareInputs are the per-arm observations for one selection. Scores are
@@ -123,6 +147,14 @@ func SelectCostAwareFromSamples(scores, means map[string]float64, known map[stri
 // qualify on posterior MEAN reaching the floor (RuleV2). A nil qmeans map
 // selects the legacy sample rule (RuleV1) for replay of old ledgers.
 func SelectCostAwareFromSamplesV2(scores, qmeans, means map[string]float64, known map[string]bool, pulls map[string]uint64, cfg CostAwareConfig) (CostAwareResult, error) {
+	return SelectCostAwareFromSamplesV3(scores, qmeans, means, known, pulls, nil, cfg)
+}
+
+// SelectCostAwareFromSamplesV3 is V2 with a safety eligibility mask: arms
+// absent from allowed (nil = all eligible) are excluded from every pool and
+// an empty allowed set fails closed. The algorithm is otherwise identical;
+// masked decisions report RuleV3.
+func SelectCostAwareFromSamplesV3(scores, qmeans, means map[string]float64, known map[string]bool, pulls map[string]uint64, allowed map[string]bool, cfg CostAwareConfig) (CostAwareResult, error) {
 	if err := cfg.Validate(); err != nil {
 		return CostAwareResult{}, err
 	}
@@ -149,7 +181,17 @@ func SelectCostAwareFromSamplesV2(scores, qmeans, means map[string]float64, know
 	if qmeans == nil {
 		rule = CostAwareRuleV1
 	}
+	masked := allowed != nil
+	if masked {
+		rule = CostAwareRuleV3
+	}
+	eligible := func(a string) bool {
+		return allowed == nil || allowed[a]
+	}
 	qualified := func(a string) bool {
+		if !eligible(a) {
+			return false
+		}
 		if pulls[a] < cfg.ColdStartPulls {
 			return true
 		}
@@ -197,6 +239,12 @@ func SelectCostAwareFromSamplesV2(scores, qmeans, means map[string]float64, know
 	pool := qualUnknown
 	reason := "no qualified arm with known cost: max-sample among qualified (exploration fallback)"
 	if len(pool) == 0 {
+		if masked {
+			// Fail closed: safety revoked every candidate. The gateway
+			// refuses the selection (503) instead of dispatching traffic
+			// no authority approved.
+			return CostAwareResult{}, fmt.Errorf("thompson: cost-aware selection has no eligible arms (safety mask empty)")
+		}
 		pool = arms
 		reason = "no arm meets quality floor: max-sample global (quality fallback)"
 		// Cold-start disabled and everything below floor: still fail
