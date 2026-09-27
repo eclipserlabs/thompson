@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -35,6 +36,10 @@ type SafetyStore struct {
 }
 
 // NewSafetyStore opens (creating) the event log and indexes existing events.
+// Single-writer operation is enforced with an exclusive, non-blocking OS
+// file lock, exactly like the outcome and decision ledgers: a second live
+// writer (second gateway process or accidental double-open) fails here
+// instead of interleaving operator actions with duplicate sequence numbers.
 func NewSafetyStore(path string) (*SafetyStore, error) {
 	if err := os.MkdirAll(dirOf(path), 0o700); err != nil {
 		return nil, fmt.Errorf("safety: mkdir: %w", err)
@@ -43,9 +48,14 @@ func NewSafetyStore(path string) (*SafetyStore, error) {
 	if err != nil {
 		return nil, fmt.Errorf("safety: open: %w", err)
 	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		_ = f.Close()
+		return nil, fmt.Errorf("safety: store %s is already held by another writer (single-writer enforced): %w", path, err)
+	}
 	s := &SafetyStore{f: f, path: path}
 	evs, err := s.readAll()
 	if err != nil {
+		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
 		_ = f.Close()
 		return nil, err
 	}
@@ -99,13 +109,14 @@ func (s *SafetyStore) Failed() bool {
 	return s.failed
 }
 
-// Close syncs and closes the log.
+// Close syncs, releases the writer lock, and closes the log.
 func (s *SafetyStore) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.f.Sync(); err != nil {
 		return err
 	}
+	_ = syscall.Flock(int(s.f.Fd()), syscall.LOCK_UN)
 	return s.f.Close()
 }
 
