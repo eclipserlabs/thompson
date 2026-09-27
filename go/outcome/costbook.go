@@ -52,25 +52,26 @@ func NewCostBookV1(armIDs []string) *CostBookV1 {
 	return b
 }
 
-// jobFullyLoadedCost mirrors harness.jobCost: sums metered attempt costs plus
-// human review cost; any nil cost (or missing human cost alongside a human
-// attempt) marks the job unmetered. Malformed (NaN/Inf/negative) costs are
-// rejected explicitly.
+// jobFullyLoadedCost implements the SAME counting rule as harness.jobCost:
+// every nil attempt CostUSD counts as unmetered — including human-pool
+// attempts whose cost lives in HumanReviewCostUSD. This conservative rule is
+// deliberately shared (see TestCostBookReportParity): the cost-aware learner
+// must optimize over exactly the population the evaluator meters, even though
+// a recorded HumanReviewCostUSD arguably accounts the job. Changing the
+// evaluator's rule is out of scope (frozen baseline + active work on report
+// tests); the experimental side aligns instead. Malformed (NaN/Inf/negative)
+// costs are rejected explicitly (stricter than the report, which predates
+// cost-aware validation and sums blindly).
 func jobFullyLoadedCost(ev OutcomeEvent) (float64, int, error) {
 	metered := 0.0
 	unmetered := 0
 	humanAttempt := false
 	for _, a := range ev.Attempts {
 		if a.CostUSD == nil {
-			// Human-pool attempts carry no attempt-level cost by design;
-			// their cost lives in HumanReviewCostUSD (checked below).
-			// Counting the nil here would mark every human-reviewed job
-			// unmetered even when fully accounted.
+			unmetered++
 			if a.ExecutorID == "human-pool" {
 				humanAttempt = true
-				continue
 			}
-			unmetered++
 			continue
 		}
 		c := *a.CostUSD
@@ -100,6 +101,24 @@ func jobFullyLoadedCost(ev OutcomeEvent) (float64, int, error) {
 		metered += hc
 	}
 	return metered, unmetered, nil
+}
+
+// FullyLoadedCost exposes the book's counting rule for cross-package parity
+// tests (harness.jobCost must agree on every constructible event).
+func FullyLoadedCost(ev OutcomeEvent) (float64, int, error) {
+	return jobFullyLoadedCost(ev)
+}
+
+// ValidateCosts rejects malformed (NaN/Inf/negative) costs explicitly without
+// touching any learner state. Callers must invoke it BEFORE Submit/Settle so
+// a refusal is atomic: the quality learner never moves on a job the cost
+// ledger refuses.
+func ValidateCosts(ev OutcomeEvent) error {
+	if err := ev.Validate(); err != nil {
+		return err
+	}
+	_, _, err := jobFullyLoadedCost(ev)
+	return err
 }
 
 // decidingArm returns the deciding attempt's arm, or "" when none.
@@ -335,6 +354,10 @@ func SaveCostCheckpoint(path string, snap CostBookSnapshot) error {
 	}
 	if err := os.Rename(tmp, path); err != nil {
 		return fmt.Errorf("outcome: rename cost checkpoint: %w", err)
+	}
+	if dir, err := os.Open(filepath.Dir(path)); err == nil {
+		_ = dir.Sync()
+		_ = dir.Close()
 	}
 	return nil
 }

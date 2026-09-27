@@ -17,16 +17,22 @@ func TestCostAwareAdversarialMatrix(t *testing.T) {
 		cheapP, strongP float64
 		cheapC, strongC float64
 		humanFallback   bool
-		omitCost        bool // nil cheap cost → missing-cost path
+		missingEvery    int // every Nth job has nil costs (0 = fully metered)
+		spikeEvery      int // every Nth job costs spikeCost on cheap (0 = none)
+		spikeCost       float64
+		difficultySplit bool // alternate easy/hard strata per job
 	}
 	scenarios := []scen{
-		{"equal-quality-different-cost", 0.75, 0.75, 0.002, 0.05, false, false},
-		{"cheap-low-quality", 0.20, 0.85, 0.001, 0.05, false, false},
-		{"high-quality-expensive", 0.60, 0.95, 0.002, 0.08, false, false},
-		{"task-difficulty-spread", 0.50, 0.90, 0.003, 0.03, false, false},
-		{"expensive-human-correction", 0.40, 0.40, 0.002, 0.02, true, false},
-		{"missing-cost", 0.75, 0.75, 0.002, 0.05, false, true},
-		{"sparse-success", 0.08, 0.12, 0.002, 0.02, false, false},
+		{"equal-quality-different-cost", 0.75, 0.75, 0.002, 0.05, false, 0, 0, 0, false},
+		{"cheap-low-quality", 0.20, 0.85, 0.001, 0.05, false, 0, 0, 0, false},
+		{"high-quality-expensive", 0.60, 0.95, 0.002, 0.08, false, 0, 0, 0, false},
+		{"task-difficulty-spread", 0.50, 0.90, 0.003, 0.03, false, 0, 0, 0, false},
+		{"expensive-human-correction", 0.40, 0.40, 0.002, 0.02, true, 0, 0, 0, false},
+		{"correlated-cost-failure", 0.50, 0.90, 0.002, 0.03, true, 0, 0, 0, false},
+		{"missing-cost", 0.75, 0.75, 0.002, 0.05, false, 4, 0, 0, false},
+		{"heavy-tail", 0.75, 0.75, 0.002, 0.05, false, 0, 20, 5.0, false},
+		{"unequal-difficulty", 0.60, 0.80, 0.003, 0.04, false, 0, 0, 0, true},
+		{"sparse-success", 0.08, 0.12, 0.002, 0.02, false, 0, 0, 0, false},
 	}
 	for _, sc := range scenarios {
 		for _, seed := range []uint64{11, 22} {
@@ -49,20 +55,36 @@ func TestCostAwareAdversarialMatrix(t *testing.T) {
 				n := 120
 				for i := 0; i < n; i++ {
 					jid := sc.name + "-" + costAwarePad(i)
-					asg, _ := assigner.Assign(jid, "web")
-					cc := sc.cheapC
+					preStrata := "web"
+					if sc.difficultySplit {
+						preStrata = map[bool]string{true: "easy", false: "hard"}[i%2 == 0]
+					}
+					asg, _ := assigner.Assign(jid, preStrata)
+					cc, cp, sp := sc.cheapC, sc.cheapP, sc.strongP
+					strata := "web"
+					if sc.difficultySplit {
+						if i%2 == 0 {
+							strata = "easy"
+							cp = min1(cp + 0.25)
+							sp = min1(sp + 0.10)
+						} else {
+							strata = "hard"
+							cp = max0(cp - 0.25)
+							sp = max0(sp - 0.10)
+						}
+					}
+					if sc.spikeEvery > 0 && i%sc.spikeEvery == 0 {
+						cc = sc.spikeCost
+					}
 					job := JobTruth{
-						JobID: jid, Strata: "web", AssignedAt: t0clock.Add(time.Duration(i) * time.Minute),
-						ArmSuccess:    map[string]float64{"cheap": sc.cheapP, "strong": sc.strongP},
+						JobID: jid, Strata: strata, AssignedAt: t0clock.Add(time.Duration(i) * time.Minute),
+						ArmSuccess:    map[string]float64{"cheap": cp, "strong": sp},
 						ArmCost:       map[string]float64{"cheap": cc, "strong": sc.strongC},
 						ArmLatency:    map[string]float64{"cheap": 100, "strong": 200},
 						HumanFallback: sc.humanFallback, HumanCost: 2.0,
 					}
-					if sc.omitCost {
-						// Simulate missing cost by running then redacting?
-						// v1 harness truth always meters; missing-cost path is
-						// covered by unit tests + report gate suites. Keep
-						// metered here; the gate suite covers the rest.
+					if sc.missingEvery > 0 && i%sc.missingEvery == 0 {
+						job.MissingCostArms = map[string]bool{"cheap": true, "strong": true}
 					}
 					if asg.Treatment == "t1" {
 						if _, err := t1.RunJob(rng, t1strat, job, asg); err != nil {
@@ -104,4 +126,18 @@ func TestCostAwareAdversarialMatrix(t *testing.T) {
 			})
 		}
 	}
+}
+
+func min1(v float64) float64 {
+	if v > 1 {
+		return 1
+	}
+	return v
+}
+
+func max0(v float64) float64 {
+	if v < 0 {
+		return 0
+	}
+	return v
 }

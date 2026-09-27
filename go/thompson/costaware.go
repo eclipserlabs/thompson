@@ -14,6 +14,12 @@ const (
 	CostAwarePolicyID     = "thompson-costaware-v1"
 	CostAwareObjectiveVer = "cost-aware-v1"
 	CostAwareStateVersion = 1
+	// CostAwareRuleV1 qualified on the Thompson SAMPLE crossing the floor.
+	// CostAwareRuleV2 (current) qualifies post-cold arms on the posterior
+	// MEAN reaching the floor. Rule version is bound to every decision so
+	// ledgers distinguish which guarantee produced each pick.
+	CostAwareRuleV1 = 1
+	CostAwareRuleV2 = 2
 )
 
 // CostAwareConfig freezes the v1 objective parameters. Every field is a
@@ -63,12 +69,13 @@ type CostAwareInputs struct {
 // genuine cost-aware optimum or an explicit quality-fallback, and the
 // per-arm cost-per-success figures used.
 type CostAwareResult struct {
-	ArmID      string             `json:"arm_id"`
-	PolicyID   string             `json:"policy_id"`
-	Objective  string             `json:"objective_version"`
-	Fallback   bool               `json:"fallback"`
-	Reason     string             `json:"reason"`
-	CostPerSuc map[string]float64 `json:"cost_per_success,omitempty"`
+	ArmID       string             `json:"arm_id"`
+	PolicyID    string             `json:"policy_id"`
+	Objective   string             `json:"objective_version"`
+	RuleVersion int                `json:"rule_version"`
+	Fallback    bool               `json:"fallback"`
+	Reason      string             `json:"reason"`
+	CostPerSuc  map[string]float64 `json:"cost_per_success,omitempty"`
 }
 
 // SelectCostAware implements quality-constrained cost-aware selection (v1):
@@ -94,17 +101,28 @@ func SelectCostAware(rng *rand.Rand, policy *Policy, means map[string]float64, k
 	}
 	_ = choice // recomputed under the cost-aware rule; kept for RNG parity
 	pulls := make(map[string]uint64, len(scores))
+	qmeans := make(map[string]float64, len(scores))
 	for arm := range scores {
 		if post, ok := policy.PosteriorFor(arm); ok {
 			pulls[arm] = post.Pulls
+			qmeans[arm] = post.Mean()
 		}
 	}
-	return SelectCostAwareFromSamples(scores, means, known, pulls, cfg)
+	return SelectCostAwareFromSamplesV2(scores, qmeans, means, known, pulls, cfg)
 }
 
 // SelectCostAwareFromSamples is the pure rule (deterministic given inputs);
-// rng-free so unit tests and replay are exact.
+// rng-free so unit tests and replay are exact. Quality means (qmeans) are the
+// posterior MEAN success estimates per arm; when nil, samples double as means
+// (legacy RuleV1 behavior, RuleVersion=1 in the result).
 func SelectCostAwareFromSamples(scores, means map[string]float64, known map[string]bool, pulls map[string]uint64, cfg CostAwareConfig) (CostAwareResult, error) {
+	return SelectCostAwareFromSamplesV2(scores, nil, means, known, pulls, cfg)
+}
+
+// SelectCostAwareFromSamplesV2 is the safeguarded rule: post-cold arms
+// qualify on posterior MEAN reaching the floor (RuleV2). A nil qmeans map
+// selects the legacy sample rule (RuleV1) for replay of old ledgers.
+func SelectCostAwareFromSamplesV2(scores, qmeans, means map[string]float64, known map[string]bool, pulls map[string]uint64, cfg CostAwareConfig) (CostAwareResult, error) {
 	if err := cfg.Validate(); err != nil {
 		return CostAwareResult{}, err
 	}
@@ -127,9 +145,20 @@ func SelectCostAwareFromSamples(scores, means map[string]float64, known map[stri
 			cps[a] = m / q
 		}
 	}
+	rule := CostAwareRuleV2
+	if qmeans == nil {
+		rule = CostAwareRuleV1
+	}
 	qualified := func(a string) bool {
 		if pulls[a] < cfg.ColdStartPulls {
 			return true
+		}
+		if rule == CostAwareRuleV2 {
+			qm, ok := qmeans[a]
+			if !ok {
+				return false
+			}
+			return qm >= cfg.QualityFloor
 		}
 		return scores[a] >= cfg.QualityFloor
 	}
@@ -139,16 +168,17 @@ func SelectCostAwareFromSamples(scores, means map[string]float64, known map[stri
 		if !qualified(a) {
 			continue
 		}
-		if known[a] {
-			if _, ok := means[a]; ok {
-				qualKnown = append(qualKnown, a)
-			}
+		if _, ok := means[a]; ok && known[a] {
+			qualKnown = append(qualKnown, a)
 		} else {
+			// F7: known-without-mean (or unknown) is explorable, never
+			// dropped: it joins the flagged fallback pool, never the
+			// optimum pool.
 			qualUnknown = append(qualUnknown, a)
 		}
 	}
 	mk := func() CostAwareResult {
-		return CostAwareResult{PolicyID: CostAwarePolicyID, Objective: CostAwareObjectiveVer, CostPerSuc: cps}
+		return CostAwareResult{PolicyID: CostAwarePolicyID, Objective: CostAwareObjectiveVer, RuleVersion: rule, CostPerSuc: cps}
 	}
 	if len(qualKnown) > 0 {
 		best := qualKnown[0]

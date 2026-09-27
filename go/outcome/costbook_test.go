@@ -44,17 +44,46 @@ func TestCostBookFallbackChainExactOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !moved {
-		t.Fatal("expected cost observation")
+	// F3 alignment: the human-pool attempt carries nil attempt-level cost,
+	// so the report rule counts the job unmetered even though
+	// HumanReviewCostUSD records the review spend. The book matches the
+	// evaluator: UnmeteredN only, no mean movement.
+	if moved {
+		t.Fatal("human-chain job must be unmetered under the shared report rule")
 	}
-	// Deciding arm strong absorbs the full chain: 0.002+0.02+1.5 = 1.522.
-	m, ok := b.Mean("strong")
-	if !ok || m != 0.002+0.02+1.5 {
-		t.Fatalf("fallback chain cost wrong: %v %v", m, ok)
+	if _, ok := b.Mean("strong"); ok {
+		t.Fatal("unmetered job must not produce a mean")
 	}
-	if _, ok := b.Mean("cheap"); ok {
+	st, _ := b.Stats("strong")
+	if st.UnmeteredN != 1 || st.MeteredN != 0 {
+		t.Fatalf("wrong counters %+v", st)
+	}
+	// Fully-metered multi-attempt chain (no human leg) IS learned exactly once
+	// on the deciding arm.
+	b2 := NewCostBookV1([]string{"cheap", "strong"})
+	c3 := 0.003
+	ev2 := OutcomeEvent{
+		SchemaVersion: SchemaVersion, EventType: EventJobSettled,
+		DecisionID: "dec-j2", JobID: "j2", StrategyID: "t3",
+		Version: 1, Supersedes: 0, Status: StatusAccepted,
+		Attempts: []Attempt{
+			{AttemptID: "j2-a0", Seq: 0, ExecutorID: "cheap", ArmID: "cheap", Transport: TransportOK, LatencyMs: 100, CostUSD: &c1, Validation: ValidationPass, Verified: VerifiedFailure, VerifiedBy: "v"},
+			{AttemptID: "j2-a1", Seq: 1, ExecutorID: "strong", ArmID: "strong", Transport: TransportOK, LatencyMs: 200, CostUSD: &c3, Validation: ValidationPass, Verified: VerifiedSuccess, VerifiedBy: "v"},
+		},
+		DecidingAttemptID: "j2-a1",
+		OccurredAt:        "2026-01-05T00:00:00Z",
+	}
+	if _, err := b2.Apply(ev2, func() []OutcomeEvent { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	m, ok := b2.Mean("strong")
+	if !ok || m != c1+c3 {
+		t.Fatalf("metered chain cost wrong: %v %v", m, ok)
+	}
+	if _, ok := b2.Mean("cheap"); ok {
 		t.Fatal("non-deciding arm must not absorb chain cost")
 	}
+	_ = hc
 }
 
 // 4: missing cost never becomes zero.

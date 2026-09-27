@@ -105,6 +105,13 @@ type JobTruth struct {
 	// fail: always verifies success at the stated review cost.
 	HumanFallback bool
 	HumanCost     float64
+	// MissingCostArms, when set for an arm, emits that arm's attempts with
+	// nil CostUSD (unmetered, never zero). Nil map preserves legacy
+	// fully-metered behavior exactly. Evaluation-only fixture support.
+	MissingCostArms map[string]bool
+	// Unresolved, when set, emits an empty attempt tape (verification never
+	// completes → UNKNOWN via decide()). False preserves legacy behavior.
+	Unresolved bool
 }
 
 // Strategy executes one job against its truth and returns the attempt tape.
@@ -126,6 +133,9 @@ type StaticStrategy struct {
 func (s StaticStrategy) ID() string { return s.StrategyID }
 
 func (s StaticStrategy) Execute(rng *rand.Rand, job JobTruth) []outcome.Attempt {
+	if job.Unresolved {
+		return nil
+	}
 	var attempts []outcome.Attempt
 	tries := s.MaxRetries + 1
 	if tries > len(s.Arms) {
@@ -139,12 +149,16 @@ func (s StaticStrategy) Execute(rng *rand.Rand, job JobTruth) []outcome.Attempt 
 		if ok {
 			verified = outcome.VerifiedSuccess
 		}
-		cost := job.ArmCost[arm]
+		var costPtr *float64
+		if !job.MissingCostArms[arm] {
+			cost := job.ArmCost[arm]
+			costPtr = &cost
+		}
 		attempts = append(attempts, outcome.Attempt{
 			AttemptID: fmt.Sprintf("%s-a%d", job.JobID, i), Seq: uint(i),
 			ExecutorID: arm, ArmID: arm,
 			Transport: outcome.TransportOK, LatencyMs: job.ArmLatency[arm],
-			CostUSD: &cost, Validation: outcome.ValidationPass, Verified: verified,
+			CostUSD: costPtr, Validation: outcome.ValidationPass, Verified: verified,
 			VerifiedBy: s.Verifier,
 		})
 		if ok {
@@ -175,6 +189,9 @@ type ThompsonStrategy struct {
 func (s ThompsonStrategy) ID() string { return s.StrategyID }
 
 func (s ThompsonStrategy) Execute(rng *rand.Rand, job JobTruth) []outcome.Attempt {
+	if job.Unresolved {
+		return nil
+	}
 	var attempts []outcome.Attempt
 	for i := 0; i <= s.MaxRetries; i++ {
 		arm, err := s.Policy.Select(rng)
@@ -187,12 +204,16 @@ func (s ThompsonStrategy) Execute(rng *rand.Rand, job JobTruth) []outcome.Attemp
 		if ok {
 			verified = outcome.VerifiedSuccess
 		}
-		cost := job.ArmCost[arm]
+		var costPtr *float64
+		if !job.MissingCostArms[arm] {
+			cost := job.ArmCost[arm]
+			costPtr = &cost
+		}
 		attempts = append(attempts, outcome.Attempt{
 			AttemptID: fmt.Sprintf("%s-a%d", job.JobID, i), Seq: uint(i),
 			ExecutorID: arm, ArmID: arm,
 			Transport: outcome.TransportOK, LatencyMs: job.ArmLatency[arm],
-			CostUSD: &cost, Validation: outcome.ValidationPass, Verified: verified,
+			CostUSD: costPtr, Validation: outcome.ValidationPass, Verified: verified,
 			VerifiedBy: s.Verifier,
 		})
 		if ok {

@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"math/rand/v2"
@@ -15,15 +16,16 @@ import (
 // version, and configuration hash that actually produced it. Persisted
 // append-only per treatment; replay compares these records.
 type CostAwareDecision struct {
-	JobID      string                   `json:"job_id"`
-	AttemptSeq int                      `json:"attempt_seq"`
-	ArmID      string                   `json:"arm_id"`
-	PolicyID   string                   `json:"policy_id"`
-	Objective  string                   `json:"objective_version"`
-	ConfigHash string                   `json:"config_hash"`
-	Fallback   bool                     `json:"fallback"`
-	Reason     string                   `json:"reason"`
-	Result     thompson.CostAwareResult `json:"result"`
+	JobID       string                   `json:"job_id"`
+	AttemptSeq  int                      `json:"attempt_seq"`
+	ArmID       string                   `json:"arm_id"`
+	PolicyID    string                   `json:"policy_id"`
+	Objective   string                   `json:"objective_version"`
+	RuleVersion int                      `json:"rule_version"`
+	ConfigHash  string                   `json:"config_hash"`
+	Fallback    bool                     `json:"fallback"`
+	Reason      string                   `json:"reason"`
+	Result      thompson.CostAwareResult `json:"result"`
 }
 
 // CostAwareStrategy selects arms via quality-constrained cost-aware selection.
@@ -65,6 +67,9 @@ func (s *CostAwareStrategy) record(d CostAwareDecision) {
 
 // Execute runs one job against its truth with per-attempt cost-aware selection.
 func (s *CostAwareStrategy) Execute(rng *rand.Rand, job JobTruth) []outcome.Attempt {
+	if job.Unresolved {
+		return nil
+	}
 	var attempts []outcome.Attempt
 	for i := 0; i <= s.MaxRetries; i++ {
 		means, known := s.costMaps()
@@ -76,7 +81,8 @@ func (s *CostAwareStrategy) Execute(rng *rand.Rand, job JobTruth) []outcome.Atte
 		s.record(CostAwareDecision{
 			JobID: job.JobID, AttemptSeq: i, ArmID: arm,
 			PolicyID: res.PolicyID, Objective: res.Objective,
-			ConfigHash: s.ConfigHash, Fallback: res.Fallback,
+			RuleVersion: res.RuleVersion,
+			ConfigHash:  s.ConfigHash, Fallback: res.Fallback,
 			Reason: res.Reason, Result: res,
 		})
 		p := job.ArmSuccess[arm]
@@ -85,12 +91,16 @@ func (s *CostAwareStrategy) Execute(rng *rand.Rand, job JobTruth) []outcome.Atte
 		if ok {
 			verified = outcome.VerifiedSuccess
 		}
-		cost := job.ArmCost[arm]
+		var costPtr *float64
+		if !job.MissingCostArms[arm] {
+			cost := job.ArmCost[arm]
+			costPtr = &cost
+		}
 		attempts = append(attempts, outcome.Attempt{
 			AttemptID: fmt.Sprintf("%s-a%d", job.JobID, i), Seq: uint(i),
 			ExecutorID: arm, ArmID: arm,
 			Transport: outcome.TransportOK, LatencyMs: job.ArmLatency[arm],
-			CostUSD: &cost, Validation: outcome.ValidationPass, Verified: verified,
+			CostUSD: costPtr, Validation: outcome.ValidationPass, Verified: verified,
 			VerifiedBy: s.Verifier,
 		})
 		if ok {
@@ -169,6 +179,12 @@ func OpenCostAwareTreatment(dir, id string, policy *thompson.Policy, cfg thompso
 		_ = af.Close()
 		return nil, err
 	}
+	if err := writeCostAwareConfig(dir, cfg); err != nil {
+		_ = store.Close()
+		_ = af.Close()
+		_ = df.Close()
+		return nil, err
+	}
 	arms := policy.EligibleArmIDs()
 	book := outcome.NewCostBookV1(arms)
 	learner := outcome.NewLearner(policy, outcome.BinaryStatusMapper{}, store.Events)
@@ -183,17 +199,45 @@ func OpenCostAwareTreatment(dir, id string, policy *thompson.Policy, cfg thompso
 	}, nil
 }
 
+// configHashForCostAware is the sha256 of the canonical config JSON,
+// matching the strength of thompson hashConfig on the quality path.
 func configHashForCostAware(cfg thompson.CostAwareConfig) string {
 	b, err := json.Marshal(cfg)
 	if err != nil {
 		return ""
 	}
-	// Short stable hash; full config persisted alongside decisions.
-	h := 0
-	for _, c := range b {
-		h = h*31 + int(c)
+	sum := sha256.Sum256(b)
+	return fmt.Sprintf("costaware-v1-%x", sum[:8])
+}
+
+// writeCostAwareConfig persists the full frozen config in the treatment dir
+// so decisions.jsonl rows (which carry only the hash) stay auditable.
+func writeCostAwareConfig(dir string, cfg thompson.CostAwareConfig) error {
+	b, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return fmt.Errorf("harness: marshal cost-aware config: %w", err)
 	}
-	return fmt.Sprintf("costaware-v1-%08x", uint32(h))
+	tmp := dir + "/config.json.tmp"
+	if err := os.WriteFile(tmp, append(b, 0x0a), 0o600); err != nil {
+		return fmt.Errorf("harness: write cost-aware config: %w", err)
+	}
+	if err := os.Rename(tmp, dir+"/config.json"); err != nil {
+		return fmt.Errorf("harness: install cost-aware config: %w", err)
+	}
+	return nil
+}
+
+// readCostAwareConfig loads the frozen config persisted at open.
+func readCostAwareConfig(path string) (thompson.CostAwareConfig, error) {
+	var cfg thompson.CostAwareConfig
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return cfg, err
+	}
+	if err := json.Unmarshal(b, &cfg); err != nil {
+		return cfg, fmt.Errorf("harness: parse cost-aware config: %w", err)
+	}
+	return cfg, cfg.Validate()
 }
 
 // Close syncs and closes files.
@@ -258,6 +302,11 @@ func (t *CostAwareTreatment) RunJob(rng *rand.Rand, job JobTruth, a Assignment) 
 		VerifiedAt: job.AssignedAt.UTC().Format("2006-01-02T15:04:05.999999999Z07:00"),
 		OccurredAt: job.AssignedAt.UTC().Format("2006-01-02T15:04:05.999999999Z07:00"),
 	}
+	// F2: pre-validate costs BEFORE settlement so a malformed-cost refusal
+	// is atomic: neither the quality learner nor the ledger moves.
+	if err := outcome.ValidateCosts(ev); err != nil {
+		return outcome.OutcomeEvent{}, err
+	}
 	if _, err := outcome.Settle(t.Store, t.Learner, ev); err != nil {
 		return outcome.OutcomeEvent{}, err
 	}
@@ -278,4 +327,73 @@ func (t *CostAwareTreatment) RunJob(rng *rand.Rand, job JobTruth, a Assignment) 
 		return outcome.OutcomeEvent{}, err
 	}
 	return ev, nil
+}
+
+// SaveCheckpoint persists quality + cost checkpoints (atomic files, fsynced).
+func (t *CostAwareTreatment) SaveCheckpoint() error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	qcp := t.Learner.CheckpointOf(len(t.Store.Events()))
+	if err := outcome.SaveCheckpoint(t.Dir+"/quality_checkpoint.json", qcp); err != nil {
+		return err
+	}
+	return outcome.SaveCostCheckpoint(t.Dir+"/cost_checkpoint.json", t.Book.Snapshot())
+}
+
+// ResumeCostAwareTreatment reopens a treatment dir and rebuilds quality and
+// cost state deterministically from the outcome ledger. The frozen config
+// must match config.json; ledgers stay append-only and isolated per
+// treatment. Crash-safe: no checkpoint required, replay is authoritative.
+func ResumeCostAwareTreatment(dir, id string, policy *thompson.Policy, cfg thompson.CostAwareConfig) (*CostAwareTreatment, error) {
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+	if policy == nil {
+		return nil, fmt.Errorf("harness: resume cost-aware treatment %s needs a policy", id)
+	}
+	frozen, err := readCostAwareConfig(dir + "/config.json")
+	if err != nil {
+		return nil, fmt.Errorf("harness: resume %s: %w", id, err)
+	}
+	if frozen != cfg {
+		return nil, fmt.Errorf("harness: resume %s: config %+v != frozen %+v", id, cfg, frozen)
+	}
+	store, err := outcome.NewFileOutcomeStore(dir + "/outcomes.jsonl")
+	if err != nil {
+		return nil, err
+	}
+	af, err := os.OpenFile(dir+"/assignments.jsonl", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		_ = store.Close()
+		return nil, err
+	}
+	df, err := os.OpenFile(dir+"/decisions.jsonl", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		_ = store.Close()
+		_ = af.Close()
+		return nil, err
+	}
+	arms := policy.EligibleArmIDs()
+	book := outcome.NewCostBookV1(arms)
+	learner := outcome.NewLearner(policy, outcome.BinaryStatusMapper{}, store.Events)
+	if _, err := learner.Rebuild(store.Events()); err != nil {
+		_ = store.Close()
+		_ = af.Close()
+		_ = df.Close()
+		return nil, fmt.Errorf("harness: resume %s quality rebuild: %w", id, err)
+	}
+	if _, err := book.Rebuild(store.Events()); err != nil {
+		_ = store.Close()
+		_ = af.Close()
+		_ = df.Close()
+		return nil, fmt.Errorf("harness: resume %s cost rebuild: %w", id, err)
+	}
+	strategy := &CostAwareStrategy{
+		StrategyID: thompson.CostAwarePolicyID, Policy: policy, Book: book,
+		Cfg: cfg, ConfigHash: configHashForCostAware(cfg), Verifier: "harness:synthetic-v1",
+	}
+	return &CostAwareTreatment{
+		ID: id, Dir: dir, Policy: policy, Learner: learner, Book: book,
+		Strategy: strategy, Cfg: cfg, Store: store, assignFile: af, decFile: df,
+	}, nil
 }
