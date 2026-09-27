@@ -186,6 +186,24 @@ func readAssignmentRows(path string) ([]string, error) {
 	return out, sc.Err()
 }
 
+// journalPathFor resolves the experimental storage backend: empty keeps
+// JSONL; "journal" selects the SQLite journal file. Anything else, or a
+// journal flag on a non-cost-aware treatment, fails closed here (never in
+// the child, where a misconfigured binary could half-start).
+func journalPathFor(t TreatmentConfig, dir string) string {
+	switch t.StorageBackend {
+	case "":
+		return ""
+	case "journal":
+		if !t.CostAware {
+			return "JOURNAL-BACKEND-REQUIRES-COSTAWARE"
+		}
+		return dir + "/journal.db"
+	default:
+		return "JOURNAL-BACKEND-UNKNOWN:" + t.StorageBackend
+	}
+}
+
 // Boot spawns one gateway binary per treatment with isolated files.
 func (r *Runner) Boot() error {
 	for i, t := range r.cfg.Manifest.Treatments {
@@ -219,7 +237,8 @@ func (r *Runner) Boot() error {
 				"127.0.0.1:"+itoa(r.cfg.PubPorts[i]),
 				"127.0.0.1:"+itoa(r.cfg.SettlePorts[i]),
 				r.cfg.Token, arms, t.ID, selSeed,
-				scPath, dir+"/safety.jsonl", r.cfg.OperatorToken, r.cfg.Timeout)
+				scPath, dir+"/safety.jsonl", r.cfg.OperatorToken,
+				journalPathFor(t, dir), r.cfg.Timeout)
 		} else {
 			g, err = SpawnGateway(r.cfg.RouterBin, t.ID, dir,
 				"127.0.0.1:"+itoa(r.cfg.PubPorts[i]),

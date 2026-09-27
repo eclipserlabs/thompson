@@ -178,13 +178,20 @@ func (g *GatewayProc) Settle(ev outcome.OutcomeEvent) (applied, learned bool, er
 // verified learning plus the validated RuleV2/V3 policy, durable safety
 // controller, and operator authentication. All three inputs are required;
 // absence fails closed in the binary (never half-enabled).
-func SpawnCostAwareGateway(routerBin, treatment, dir, publicAddr, settleAddr, token, arms, strategy, selectionSeed, safetyConfigPath, safetyPath, operatorToken string, timeout time.Duration) (*GatewayProc, error) {
-	base, err := spawnWithEnv(routerBin, treatment, dir, publicAddr, settleAddr, token, arms, strategy, "", selectionSeed, map[string]string{
+func SpawnCostAwareGateway(routerBin, treatment, dir, publicAddr, settleAddr, token, arms, strategy, selectionSeed, safetyConfigPath, safetyPath, operatorToken, journalPath string, timeout time.Duration) (*GatewayProc, error) {
+	env := map[string]string{
 		"COSTAWARE":      "1",
 		"SAFETY_CONFIG":  safetyConfigPath,
 		"SAFETY_PATH":    safetyPath,
 		"OPERATOR_TOKEN": operatorToken,
-	}, timeout)
+	}
+	if journalPath != "" {
+		if len(journalPath) > 16 && journalPath[:16] == "JOURNAL-BACKEND-" {
+			return nil, fmt.Errorf("exp-run: treatment %s has %s (refusing)", treatment, journalPath)
+		}
+		env["JOURNAL_PATH"] = journalPath
+	}
+	base, err := spawnWithEnv(routerBin, treatment, dir, publicAddr, settleAddr, token, arms, strategy, "", selectionSeed, env, timeout)
 	return base, err
 }
 
