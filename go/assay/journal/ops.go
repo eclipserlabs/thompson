@@ -35,15 +35,15 @@ type OutcomeAttempt struct {
 
 // SettledOutcome is the journal's versioned outcome record.
 type SettledOutcome struct {
-	DecisionID       string           `json:"decision_id"`
-	JobID            string           `json:"job_id"`
-	Version          uint64           `json:"version"`
-	Supersedes       uint64           `json:"supersedes"`
-	Status           string           `json:"status"`
-	Attempts         []OutcomeAttempt `json:"attempts"`
-	DecidingAttempt  string           `json:"deciding_attempt"`
-	HumanReviewCost  *float64         `json:"human_review_cost_usd,omitempty"`
-	VerifiedBy       string           `json:"verified_by,omitempty"`
+	DecisionID      string           `json:"decision_id"`
+	JobID           string           `json:"job_id"`
+	Version         uint64           `json:"version"`
+	Supersedes      uint64           `json:"supersedes"`
+	Status          string           `json:"status"`
+	Attempts        []OutcomeAttempt `json:"attempts"`
+	DecidingAttempt string           `json:"deciding_attempt"`
+	HumanReviewCost *float64         `json:"human_review_cost_usd,omitempty"`
+	VerifiedBy      string           `json:"verified_by,omitempty"`
 }
 
 // SafetyTransition is a versioned operator/monitor safety action.

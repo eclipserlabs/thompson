@@ -287,3 +287,6 @@ func itoaJ(i int) string {
 	}
 	return s
 }
+
+func decID(p string, i int) string { return p + "-dec-" + itoaJ(i) }
+func jobID(p string, i int) string { return p + "-job-" + itoaJ(i) }
