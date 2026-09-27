@@ -51,6 +51,10 @@ type appConfig struct {
 	// checkpointEvery cadences verified-learning checkpoints; <=0 disables.
 	checkpointEvery time.Duration
 
+	// instanceID binds test/supervised harnesses to this exact process
+	// (X-Instance-ID on health, X-Expect-Instance required per request).
+	// Empty disables both (legacy-compatible).
+	instanceID    string
 	decisionsPath string
 	outcomesPath  string
 	settleToken   string
@@ -90,6 +94,7 @@ func loadConfig(getenv func(string) string) (appConfig, error) {
 	if len(c.arms) == 0 {
 		return c, fmt.Errorf("router: no arms configured")
 	}
+	c.instanceID = getenv("INSTANCE_ID")
 	c.providerURLs = make(map[string]string)
 	for _, arm := range c.arms {
 		key := "PROVIDER_URL_" + strings.ToUpper(strings.ReplaceAll(strings.ReplaceAll(arm, "/", "_"), "-", "_"))
@@ -256,6 +261,7 @@ func buildRouter(cfg appConfig) (*gateway.Router, func(), error) {
 	}
 
 	rc := gateway.RouterConfig{
+		InstanceID:           cfg.instanceID,
 		Policy:               policy,
 		Registry:             registry,
 		Writer:               writer,

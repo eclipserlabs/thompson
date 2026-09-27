@@ -64,6 +64,9 @@ func (rt *Router) operatorAction(w http.ResponseWriter, r *http.Request, action 
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if !rt.checkInstance(w, r) {
+		return
+	}
 	op, ok := rt.operatorAuth(r)
 	if !ok || op == "" {
 		http.Error(w, "unauthorized operator", http.StatusUnauthorized)

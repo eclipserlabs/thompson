@@ -22,6 +22,7 @@ type safetyFixture struct {
 	quality  *thompson.Policy
 	outStore *outcome.FileOutcomeStore
 	decStore *FileDecisionStore
+	sstore   *SafetyStore
 	dir      string
 }
 
@@ -80,7 +81,7 @@ func newSafetyFixture(t *testing.T, cfg SafetyConfig) *safetyFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &safetyFixture{router: rt, safety: safety, book: book, quality: q, outStore: outStore, decStore: decStore, dir: dir}
+	return &safetyFixture{router: rt, safety: safety, book: book, quality: q, outStore: outStore, decStore: decStore, sstore: sstore, dir: dir}
 }
 
 func (f *safetyFixture) close(t *testing.T) {
@@ -247,7 +248,11 @@ func TestSafetyEmergencyStopDurable(t *testing.T) {
 			t.Fatalf("emergency must route fallback, got %d %q", code, arm)
 		}
 	}
-	// Restart durability: rebuild controller over the same files.
+	// Restart durability: close (releasing the writer lock, exactly as
+	// process death would) and rebuild the controller over the same files.
+	if err := f.sstore.Close(); err != nil {
+		t.Fatal(err)
+	}
 	sstore, err := NewSafetyStore(f.dir + "/safety.jsonl")
 	if err != nil {
 		t.Fatal(err)
@@ -264,14 +269,18 @@ func TestSafetyEmergencyStopDurable(t *testing.T) {
 		t.Fatalf("post-restart mask wrong: %v", allowed)
 	}
 	if code := func() int {
-		b, _ := json.Marshal(operatorRequest{Reason: "all-clear"})
-		req := httptest.NewRequest(http.MethodPost, "/v1/operator/resume", bytes.NewReader(b))
-		req.Header.Set("Authorization", "Bearer op:alice")
-		rec := httptest.NewRecorder()
-		f.router.ResumeHandler(rec, req)
-		return rec.Code
+		// Release through the REBUILT controller: the pre-restart router's
+		// store is closed, so its handlers correctly refuse with 409.
+		// (HTTP release path is covered by TestSafetyOperatorResumeAuth.)
+		if err := safety2.EmergencyRelease("operator:alice", "all-clear"); err != nil {
+			t.Fatalf("release: %v", err)
+		}
+		return 200
 	}(); code != 200 {
 		t.Fatalf("release %d", code)
+	}
+	if safety2.Emergency() {
+		t.Fatal("release did not lift the emergency")
 	}
 }
 

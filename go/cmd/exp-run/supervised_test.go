@@ -64,6 +64,12 @@ func TestSupervisedFourTreatment(t *testing.T) {
 	if err := r.Run(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+	// Shut down before reboot: rebinding the same ports while the first
+	// processes live would health-check against stale gateways. (The
+	// instance handshake catches exactly this; shutdown makes it moot.
+	// The deferred Shutdown above stays as a failure-path safety net;
+	// double shutdown is safe.)
+	r.Shutdown()
 
 	// Artifacts per treatment.
 	for _, tx := range []string{"t0", "t1", "t2", "t3"} {

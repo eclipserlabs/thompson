@@ -50,6 +50,7 @@ type SelectionPolicy interface {
 // Router is the deployable routing path: Select -> persist -> Execute -> Reward -> Record -> persist (+ optional shadow).
 // Single SelectionPolicy instance per process (state_ownership requirement), guarded by policy's own mutex.
 type Router struct {
+	instanceID string
 	policy     SelectionPolicy
 	registry   *ProviderRegistry
 	writer     EvidenceWriter
@@ -91,6 +92,12 @@ const (
 )
 
 type RouterConfig struct {
+	// InstanceID binds this process to test/supervised harnesses: when set,
+	// /health reports it (X-Instance-ID) and every request must carry a
+	// matching X-Expect-Instance header or it is refused with 409. Absent
+	// disables both behaviors (legacy-compatible). It authenticates nothing;
+	// it prevents cross-process test interference from EVER looking healthy.
+	InstanceID string
 	Policy   SelectionPolicy
 	Registry *ProviderRegistry
 	Writer   EvidenceWriter
@@ -182,6 +189,7 @@ func NewRouter(cfg RouterConfig) (*Router, error) {
 		return nil, fmt.Errorf("router: unknown mode %q", string(mode))
 	}
 	rt := &Router{
+		instanceID:  cfg.InstanceID,
 		policy:      cfg.Policy,
 		registry:    cfg.Registry,
 		writer:      cfg.Writer,
@@ -265,6 +273,9 @@ func computeReward(base thompson.RewardPolicy, latency float64, success bool, co
 // ServeHTTP implements V1 integrity order:
 // Select -> DecisionStarted -> Primary Execute -> ExecutionObserved -> Reward -> Record -> DecisionLearned -> Shadow (or Skipped)
 func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if !rt.checkInstance(w, r) {
+		return
+	}
 	canonicalID := generateCanonicalID()
 	externalID := extractExternalID(r)
 	ctx := context.WithValue(r.Context(), decisionIDKey{}, canonicalID)
@@ -642,6 +653,22 @@ func (rt *Router) notePersistenceIssue() {
 	rt.persistIssue.Store(time.Now().UnixNano())
 }
 
+// checkInstance enforces the run-identity binding: when InstanceID is
+// configured, callers must present the matching X-Expect-Instance header or
+// the request is refused with 409 before touching any state. A wrong-process
+// contact therefore fails loudly instead of landing decisions in a foreign
+// ledger. Unconfigured instances accept everything (legacy behavior).
+func (rt *Router) checkInstance(w http.ResponseWriter, r *http.Request) bool {
+	if rt.instanceID == "" {
+		return true
+	}
+	if r.Header.Get("X-Expect-Instance") != rt.instanceID {
+		http.Error(w, "instance mismatch: request is not addressed to this gateway process", http.StatusConflict)
+		return false
+	}
+	return true
+}
+
 func (rt *Router) HealthHandler(w http.ResponseWriter, r *http.Request) {
 	// Liveness with a degraded window: the process refuses to start unless
 	// required storage opens, and request-time persistence failures already
@@ -651,6 +678,9 @@ func (rt *Router) HealthHandler(w http.ResponseWriter, r *http.Request) {
 	// request path. Settlement validation rejections are client errors, not
 	// storage failures, and do not affect health.)
 	w.Header().Set("Content-Type", "application/json")
+	if rt.instanceID != "" {
+		w.Header().Set("X-Instance-ID", rt.instanceID)
+	}
 	if nanos := rt.persistIssue.Load(); nanos != 0 && time.Since(time.Unix(0, nanos)) < time.Minute {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		_, _ = w.Write([]byte(`{"status":"degraded"}`))

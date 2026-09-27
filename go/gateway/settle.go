@@ -107,6 +107,9 @@ func (rt *Router) SettleHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if !rt.checkInstance(w, r) {
+		return
+	}
 	if rt.settleAuth != nil && !rt.settleAuth(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return

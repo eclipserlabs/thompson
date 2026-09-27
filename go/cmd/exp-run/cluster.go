@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	cryptorand "crypto/rand"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -22,8 +23,22 @@ type GatewayProc struct {
 	SettleURL string
 	Token     string
 	Dir       string
+	// instanceID binds this client to its exact child process: every request
+	// carries it as X-Expect-Instance and boot refuses a mismatched
+	// X-Instance-ID, so a squatter on our ports fails loudly (409 / boot
+	// error) instead of silently serving foreign ledgers.
+	instanceID string
 	cmd       *exec.Cmd
 	client    *http.Client
+}
+
+// newInstanceID mints a unique per-gateway-process identity.
+func newInstanceID() string {
+	var b [16]byte
+	if _, err := cryptorand.Read(b[:]); err != nil {
+		return fmt.Sprintf("e2e-%d-%d", os.Getpid(), time.Now().UnixNano())
+	}
+	return fmt.Sprintf("%x", b[:])
 }
 
 // syncBuffer is a goroutine-safe bytes.Buffer for capturing child stderr.
@@ -49,52 +64,10 @@ func (s *syncBuffer) String() string {
 
 // SpawnGateway starts a router binary with per-treatment files in verified
 // mode. Each treatment gets its own process, policy, learner, and ledgers:
-// no cross-treatment state exists by construction.
+// no cross-treatment state exists by construction. Identity binding (ports +
+// instance handshake) lives in spawnWithEnv, shared by all spawn paths.
 func SpawnGateway(routerBin, treatment, dir, publicAddr, settleAddr, token, arms, strategy, mapper, selectionSeed string, timeout time.Duration) (*GatewayProc, error) {
-	env := append(os.Environ(),
-		"ROUTER_MODE=verified",
-		"STRATEGY_ID="+strategy,
-		"ARMS="+arms,
-		"PORT="+portOf(publicAddr),
-		"SETTLE_ADDR="+settleAddr,
-		"EVIDENCE_PATH="+dir+"/evidence.jsonl",
-		"DECISIONS_PATH="+dir+"/decisions.jsonl",
-		"OUTCOMES_PATH="+dir+"/outcomes.jsonl",
-		"SETTLE_TOKEN="+token,
-		"MAPPER="+mapper,
-		"SELECTION_SEED="+selectionSeed,
-	)
-	cmd := exec.Command(routerBin)
-	cmd.Env = env
-	var stderr syncBuffer
-	cmd.Stderr = &stderr
-	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("exp-run: start gateway %s: %w", treatment, err)
-	}
-	g := &GatewayProc{
-		Treatment: treatment,
-		PublicURL: "http://" + publicAddr,
-		SettleURL: "http://" + settleAddr,
-		Token:     token, Dir: dir, cmd: cmd,
-		client: &http.Client{Timeout: timeout},
-	}
-	deadline := time.Now().Add(timeout)
-	for {
-		resp, err := g.client.Get(g.PublicURL + "/health")
-		if err == nil && resp.StatusCode == http.StatusOK {
-			resp.Body.Close()
-			return g, nil
-		}
-		if err == nil {
-			resp.Body.Close()
-		}
-		if time.Now().After(deadline) {
-			_ = cmd.Process.Kill()
-			_, _ = cmd.Process.Wait()
-			return nil, fmt.Errorf("exp-run: gateway %s unhealthy: %s", treatment, stderr.String())
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
+	return spawnWithEnv(routerBin, treatment, dir, publicAddr, settleAddr, token, arms, strategy, mapper, selectionSeed, map[string]string{}, timeout)
 }
 
 func portOf(addr string) string {
@@ -106,12 +79,17 @@ func portOf(addr string) string {
 	return addr
 }
 
-// Kill stops the gateway and waits for exit.
-func (g *GatewayProc) Kill() {
+// kill stops the gateway and waits for exit.
+func (g *GatewayProc) kill() {
 	if g.cmd != nil && g.cmd.Process != nil {
 		_ = g.cmd.Process.Kill()
 		_, _ = g.cmd.Process.Wait()
 	}
+}
+
+// Kill stops the gateway and waits for exit (public alias for tests).
+func (g *GatewayProc) Kill() {
+	g.kill()
 }
 
 // RouteResult is one attempt's transport observation.
@@ -143,6 +121,9 @@ func (g *GatewayProc) RouteWithHeaders(ctx context.Context, body []byte, deadlin
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
+	if g.instanceID != "" {
+		req.Header.Set("X-Expect-Instance", g.instanceID)
+	}
 	resp, err := g.client.Do(req)
 	if err != nil {
 		return RouteResult{TimedOut: true}
@@ -170,6 +151,9 @@ func (g *GatewayProc) Settle(ev outcome.OutcomeEvent) (applied, learned bool, er
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+g.Token)
+	if g.instanceID != "" {
+		req.Header.Set("X-Expect-Instance", g.instanceID)
+	}
 	resp, err := g.client.Do(req)
 	if err != nil {
 		return false, false, fmt.Errorf("exp-run: settle %s v%d: %w", ev.JobID, ev.Version, err)
@@ -205,6 +189,8 @@ func SpawnCostAwareGateway(routerBin, treatment, dir, publicAddr, settleAddr, to
 }
 
 func spawnWithEnv(routerBin, treatment, dir, publicAddr, settleAddr, token, arms, strategy, mapper, selectionSeed string, extra map[string]string, timeout time.Duration) (*GatewayProc, error) {
+	instanceID := newInstanceID()
+	extra["INSTANCE_ID"] = instanceID
 	env := append(os.Environ(),
 		"ROUTER_MODE=verified",
 		"STRATEGY_ID="+strategy,
@@ -232,14 +218,22 @@ func spawnWithEnv(routerBin, treatment, dir, publicAddr, settleAddr, token, arms
 		Treatment: treatment,
 		PublicURL: "http://" + publicAddr,
 		SettleURL: "http://" + settleAddr,
-		Token:     token, Dir: dir, cmd: cmd,
+		Token:     token, Dir: dir, cmd: cmd, instanceID: instanceID,
 		client: &http.Client{Timeout: timeout},
 	}
 	deadline := time.Now().Add(timeout)
 	for {
 		resp, err := g.client.Get(g.PublicURL + "/health")
 		if err == nil && resp.StatusCode == http.StatusOK {
+			got := resp.Header.Get("X-Instance-ID")
 			resp.Body.Close()
+			if got != instanceID {
+				g.kill()
+				if got == "" {
+					return nil, fmt.Errorf("exp-run: gateway %s health check has no instance identity (foreign or legacy process on our ports?)", treatment)
+				}
+				return nil, fmt.Errorf("exp-run: gateway %s is a different process (refusing cross-talk)", treatment)
+			}
 			return g, nil
 		}
 		if err == nil {
@@ -263,6 +257,9 @@ func (g *GatewayProc) Operator(action, arm, reason, operatorToken, operatorID st
 		return 0, err
 	}
 	req.Header.Set("Authorization", "Bearer "+operatorToken+":"+operatorID)
+	if g.instanceID != "" {
+		req.Header.Set("X-Expect-Instance", g.instanceID)
+	}
 	resp, err := g.client.Do(req)
 	if err != nil {
 		return 0, err

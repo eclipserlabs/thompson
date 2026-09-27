@@ -43,29 +43,36 @@ type ArmHealth struct {
 // armHealth folds the authoritative outcome events (the same source the
 // learner rebuilds from): latest version per job, newest-first by Seq, last
 // Window learnable-or-censored outcomes attributed to the deciding arm.
+//
+// Implementation: single latest-wins pass storing slice indices (no event
+// copies, no full sort), then a Seq-ordered pass over the attributed subset
+// only. Output is identical to a full newest-first fold for inputs in any
+// order; cost is linear in history with a small constant (see
+// monitor_scaling_test.go).
 func armHealth(evs []outcome.OutcomeEvent, arm string, window int) ArmHealth {
 	h := ArmHealth{Arm: arm, Window: window}
-	latest := map[string]outcome.OutcomeEvent{}
-	var order []outcome.OutcomeEvent
-	seenJob := map[string]bool{}
-	// Newest first: events carry Seq ledger order.
-	cp := make([]outcome.OutcomeEvent, len(evs))
-	copy(cp, evs)
-	sort.Slice(cp, func(i, j int) bool { return cp[i].Seq > cp[j].Seq })
-	for _, ev := range cp {
-		if prev, ok := latest[ev.JobID]; ok && prev.Version >= ev.Version {
-			continue
+	// Pass 1: latest version per job (max version, Seq breaks ties).
+	latest := make(map[string]int, len(evs))
+	for i, ev := range evs {
+		if j, ok := latest[ev.JobID]; ok {
+			cur := evs[j]
+			if cur.Version > ev.Version || (cur.Version == ev.Version && cur.Seq >= ev.Seq) {
+				continue
+			}
 		}
-		latest[ev.JobID] = ev
+		latest[ev.JobID] = i
 	}
-	for _, ev := range cp {
-		if latest[ev.JobID].Version != ev.Version || latest[ev.JobID].Seq != ev.Seq {
-			continue
-		}
-		if seenJob[ev.JobID] {
-			continue
-		}
-		seenJob[ev.JobID] = true
+	// Pass 2: newest-first scan over indices (no event copies). The window
+	// break below also bounds HumanFixed crediting to jobs newer than the
+	// cutoff — preserved exactly from the full-sort fold.
+	byNewest := make([]int, 0, len(latest))
+	for _, i := range latest {
+		byNewest = append(byNewest, i)
+	}
+	sort.Slice(byNewest, func(a, b int) bool { return evs[byNewest[a]].Seq > evs[byNewest[b]].Seq })
+	var windowed []outcome.OutcomeEvent
+	for _, i := range byNewest {
+		ev := evs[i]
 		dec := ""
 		for _, a := range ev.Attempts {
 			if a.AttemptID == ev.DecidingAttemptID {
@@ -90,14 +97,14 @@ func armHealth(evs []outcome.OutcomeEvent, arm string, window int) ArmHealth {
 		if dec != arm {
 			continue
 		}
-		order = append(order, ev)
-		if len(order) >= window {
+		windowed = append(windowed, ev)
+		if len(windowed) >= window {
 			break
 		}
 	}
 	var delaySum float64
 	delayN := 0
-	for _, ev := range order {
+	for _, ev := range windowed {
 		switch ev.Status {
 		case outcome.StatusAccepted:
 			h.Matured++
