@@ -186,6 +186,7 @@ type runFlags struct {
 	// --acknowledge carries the frozen content hash (explicit sign-off).
 	pilotConfig string
 	acknowledge string
+	opToken     string
 }
 
 func runFlagSet(name string) (*flag.FlagSet, *runFlags) {
@@ -204,6 +205,7 @@ func runFlagSet(name string) (*flag.FlagSet, *runFlags) {
 	fs.Uint64Var(&f.selSeed, "selection-seed", 0, "fixed gateway selection seed base (0 = time-seeded; required for reproducible dry runs)")
 	fs.StringVar(&f.pilotConfig, "pilot-config", "", "frozen pilot configuration path (optional; when set, --acknowledge is required)")
 	fs.StringVar(&f.acknowledge, "acknowledge", "", "frozen pilot content hash sign-off (required with --pilot-config)")
+	fs.StringVar(&f.opToken, "operator-token", "", "operator credential for supervised runs (required by supervised)")
 	return fs, f
 }
 

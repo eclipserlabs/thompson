@@ -549,11 +549,26 @@ func jsonUnmarshal(b []byte, v any) error {
 }
 
 func safetyConfigHash(raw []byte) (string, error) {
-	var v map[string]any
-	if err := json.Unmarshal(raw, &v); err != nil {
+	// Canonicalize before hashing: the frozen identity must depend on the
+	// CONFIGURATION, not its serialization. Indented, compact, or
+	// key-reordered documents describing the same envelope hash identically,
+	// so legitimate resume can never fail on formatting drift. (encoding/json
+	// marshals structs in field order deterministically; SafetyConfig has no
+	// maps.) Note: this rotates hashes issued by the earlier raw-bytes rule;
+	// no production safety state exists under the old rule (synthetic runs
+	// only), so no migration is provided — old logs refuse resume loudly.
+	var cfg gateway.SafetyConfig
+	if err := json.Unmarshal(raw, &cfg); err != nil {
 		return "", fmt.Errorf("router: SAFETY_CONFIG is not JSON: %w", err)
 	}
-	sum := sha256Sum(raw)
+	if err := cfg.Validate(); err != nil {
+		return "", fmt.Errorf("router: %w", err)
+	}
+	canonical, err := json.Marshal(cfg)
+	if err != nil {
+		return "", fmt.Errorf("router: canonicalize safety config: %w", err)
+	}
+	sum := sha256Sum(canonical)
 	return fmt.Sprintf("safety-v1-%x", sum[:8]), nil
 }
 

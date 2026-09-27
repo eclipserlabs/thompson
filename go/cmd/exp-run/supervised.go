@@ -156,7 +156,10 @@ func executeSupervised(f *runFlags, m *Manifest, demoStop bool) error {
 			safetyConfigs[t.ID] = scb
 		}
 	}
-	opToken := "supervised-op-token"
+	opToken := f.opToken
+	if opToken == "" {
+		return fmt.Errorf("exp-run: supervised requires --operator-token")
+	}
 	r, err := OpenRunner(RunnerConfig{
 		Manifest: m, Root: f.root, RouterBin: f.routerBin,
 		PubPorts: pub, SettlePorts: settle, Token: f.token,
