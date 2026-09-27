@@ -148,9 +148,9 @@ type LoggedPolicy struct {
 
 // LoggedRow is one learning-log record.
 type LoggedRow struct {
-	Job string  `json:"job"`
-	Arm string  `json:"arm"`
-	Win bool    `json:"win"`
+	Job string `json:"job"`
+	Arm string `json:"arm"`
+	Win bool   `json:"win"`
 }
 
 func OpenLoggedPolicy(path string, arms ...string) (*LoggedPolicy, error) {
