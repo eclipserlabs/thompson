@@ -128,8 +128,20 @@ func TestE2EPublicCannotSettle(t *testing.T) {
 		t.Fatal(err)
 	}
 	resp2.Body.Close()
-	if resp2.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("unauthenticated settle=%d want 401", resp2.StatusCode)
+	// No instance header on an instance-bound gateway: refused as
+	// unaddressed (409) before auth is even consulted.
+	if resp2.StatusCode != http.StatusConflict {
+		t.Fatalf("unaddressed settle=%d want 409", resp2.StatusCode)
+	}
+	// Addressed but unauthenticated: 401 as before.
+	req.Header.Set("X-Expect-Instance", g.instanceID)
+	resp3, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp3.Body.Close()
+	if resp3.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated settle=%d want 401", resp3.StatusCode)
 	}
 }
 
