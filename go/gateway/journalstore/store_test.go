@@ -221,3 +221,32 @@ func TestJournalBackendSafetyRoundTrip(t *testing.T) {
 		t.Fatalf("safety round trip wrong: %+v", evs)
 	}
 }
+
+// Journal files match the JSONL 0600 posture (SQLite inherits umask
+// otherwise): after writes and at rest every existing file is private.
+func TestJournalFilesPrivate(t *testing.T) {
+	f := newBackendFixture(t, []string{"cheap", "strong"})
+	if _, _, _, code := f.serve(t); code != 200 {
+		t.Fatalf("serve %d", code)
+	}
+	if err := f.backend.Close(); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, p := range []string{"t3.db", "t3.db-wal", "t3.db-shm"} {
+		fi, err := os.Stat(filepath.Join(f.dir, p))
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		found = true
+		if fi.Mode().Perm() != 0o600 {
+			t.Fatalf("%s mode=%o want 600", p, fi.Mode().Perm())
+		}
+	}
+	if !found {
+		t.Fatal("no journal files found")
+	}
+}

@@ -36,6 +36,7 @@ import (
 type Backend struct {
 	journal *journal.Journal
 	dir     string
+	file    string // full journal path (dir/name), for permission tightening
 
 	mu        sync.Mutex
 	maxSeq    uint64
@@ -66,21 +67,42 @@ func OpenBackend(dir, name string) (*Backend, error) {
 		return nil, err
 	}
 	b := &Backend{
-		journal: j, dir: dir,
+		journal: j, dir: dir, file: dir + "/" + name,
 		decByID: map[string]int{}, outLatest: map[string]int{},
 		execs: map[string][]gateway.DecisionExecution{},
 	}
 	b.dec = &JournalDecisionStore{be: b}
 	b.out = &JournalOutcomeStore{be: b}
 	b.saf = &JournalSafetyStore{be: b}
+	// SQLite creates the database (and WAL sidecars) under the process
+	// umask — typically 0644. JSONL ledgers are 0600; match that posture
+	// here, pilot-local, without touching the shared assay package.
+	tightenJournalFiles(dir + "/" + name)
 	return b, nil
+}
+
+// tightenJournalFiles best-effort chmods the journal file set to 0600.
+// Missing sidecars (-wal/-shm when idle) are skipped, never errors.
+func tightenJournalFiles(base string) {
+	for _, p := range []string{base, base + "-wal", base + "-shm"} {
+		if _, err := statFile(p); err != nil {
+			continue
+		}
+		_ = chmodFile(p, 0o600)
+	}
 }
 
 // Journal returns the shared handle (recovery paths, reporting loaders).
 func (b *Backend) Journal() *journal.Journal { return b.journal }
 
 // Close closes the shared handle.
-func (b *Backend) Close() error { return b.journal.Close() }
+func (b *Backend) Close() error {
+	err := b.journal.Close()
+	// WAL sidecars may be (re)created during writes after open-time
+	// tightening; re-tighten at rest so the file set stays 0600.
+	tightenJournalFiles(b.file)
+	return err
+}
 
 // Decisions builds the decision store over the shared handle. The
 // instance is a singleton: all callers share the backend replay cache.
@@ -510,6 +532,8 @@ func (s *JournalSafetyStore) Failed() bool {
 func (s *JournalSafetyStore) Close() error { return nil }
 
 func statFile(path string) (os.FileInfo, error) { return os.Stat(path) }
+
+func chmodFile(path string, mode os.FileMode) error { return os.Chmod(path, mode) }
 
 func timeRFC3339(ns int64) string {
 	return time.Unix(0, ns).UTC().Format(time.RFC3339Nano)
