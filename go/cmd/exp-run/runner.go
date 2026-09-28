@@ -651,29 +651,15 @@ func (r *Runner) executeAttempt(ctx context.Context, g *GatewayProc, job Manifes
 // the in-flight attempt. Returns the selected arm and decision ID.
 func (r *Runner) resolveTimeout(g *GatewayProc, since time.Time) (arm, decision string) {
 	_ = since
-	before := countLines(g.Dir + "/decisions.jsonl")
+	before := g.countDecisions()
 	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
-		if countLines(g.Dir+"/decisions.jsonl") > before {
-			return latestDecision(g.Dir)
+		if g.countDecisions() > before {
+			return g.latestCommitted()
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	return latestDecision(g.Dir)
-}
-
-func countLines(path string) int {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return 0
-	}
-	n := 0
-	for _, line := range strings.Split(string(raw), "\n") {
-		if strings.TrimSpace(line) != "" {
-			n++
-		}
-	}
-	return n
+	return g.latestCommitted()
 }
 
 // appendAssignment persists one assignment row to a treatment ledger,
