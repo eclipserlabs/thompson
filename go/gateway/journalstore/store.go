@@ -23,9 +23,32 @@ import (
 // Sharing the handle IS the transaction coordination: there is no
 // additional coordinator code because every atomic unit already commits
 // inside a single journal transaction.
+//
+// Backend also owns the replay cache: one in-memory projection of the
+// journal shared by all three stores. Reads sync the tail (EventsSince
+// the cached max seq, usually zero rows) and serve from memory, so
+// steady-state serve/settle and boot recovery never pay a full-table
+// scan per call. Writes go through the journal first, then sync the
+// tail, so the cache always reflects committed rows (including the
+// writer's own). No semantics change: the cache is a pure projection,
+// invalid inputs are still refused by the journal, and ordering is
+// always commit (seq) order.
 type Backend struct {
 	journal *journal.Journal
 	dir     string
+
+	mu        sync.Mutex
+	maxSeq    uint64
+	decisions []gateway.CommittedDecision
+	decByID   map[string]int
+	outcomes  []outcome.OutcomeEvent
+	outLatest map[string]int // jobID -> index of highest version
+	safety    []gateway.SafetyEvent
+	execs     map[string][]gateway.DecisionExecution
+
+	dec *JournalDecisionStore
+	out *JournalOutcomeStore
+	saf *JournalSafetyStore
 }
 
 // OpenBackend opens (creating) the treatment journal. The path doubles as
@@ -42,7 +65,15 @@ func OpenBackend(dir, name string) (*Backend, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Backend{journal: j, dir: dir}, nil
+	b := &Backend{
+		journal: j, dir: dir,
+		decByID: map[string]int{}, outLatest: map[string]int{},
+		execs: map[string][]gateway.DecisionExecution{},
+	}
+	b.dec = &JournalDecisionStore{be: b}
+	b.out = &JournalOutcomeStore{be: b}
+	b.saf = &JournalSafetyStore{be: b}
+	return b, nil
 }
 
 // Journal returns the shared handle (recovery paths, reporting loaders).
@@ -51,27 +82,77 @@ func (b *Backend) Journal() *journal.Journal { return b.journal }
 // Close closes the shared handle.
 func (b *Backend) Close() error { return b.journal.Close() }
 
-// Decisions builds the decision store over the shared handle.
+// Decisions builds the decision store over the shared handle. The
+// instance is a singleton: all callers share the backend replay cache.
 func (b *Backend) Decisions() *JournalDecisionStore {
-	return &JournalDecisionStore{journal: b.journal}
+	return b.dec
 }
 
-// Outcomes builds the outcome store over the shared handle.
+// Outcomes builds the outcome store over the shared handle (singleton,
+// shares the replay cache).
 func (b *Backend) Outcomes() *JournalOutcomeStore {
-	return &JournalOutcomeStore{journal: b.journal}
+	return b.out
 }
 
-// Safety builds the safety-event sink over the shared handle.
+// Safety builds the safety-event sink over the shared handle (singleton,
+// shares the replay cache).
 func (b *Backend) Safety() *JournalSafetyStore {
-	return &JournalSafetyStore{journal: b.journal}
+	return b.saf
+}
+
+// syncLocked pulls committed rows after the cached max seq into the
+// projection. Caller holds b.mu. New rows are append-only, so the cache
+// only grows; decByID/outLatest are maintained incrementally.
+func (b *Backend) syncLocked() error {
+	evs, err := b.journal.EventsSince(b.maxSeq)
+	if err != nil {
+		return err
+	}
+	for _, e := range evs {
+		if e.Seq > b.maxSeq {
+			b.maxSeq = e.Seq
+		}
+		switch e.Kind {
+		case "decision":
+			d, err := fromJournalDecision(e)
+			if err != nil {
+				return err
+			}
+			if i, ok := b.decByID[d.DecisionID]; ok {
+				b.decisions[i] = d
+			} else {
+				b.decByID[d.DecisionID] = len(b.decisions)
+				b.decisions = append(b.decisions, d)
+			}
+		case "outcome":
+			ev, err := fromJournalOutcome(e)
+			if err != nil {
+				return err
+			}
+			b.outcomes = append(b.outcomes, ev)
+			if i, ok := b.outLatest[ev.JobID]; !ok || b.outcomes[i].Version < ev.Version {
+				b.outLatest[ev.JobID] = len(b.outcomes) - 1
+			}
+		case "safety":
+			var st journal.SafetyTransition
+			if err := json.Unmarshal([]byte(e.Payload), &st); err != nil {
+				return err
+			}
+			b.safety = append(b.safety, gateway.SafetyEvent{
+				Seq: e.Seq, At: timeRFC3339(e.CreatedNS), Actor: st.Actor,
+				Type: st.Type, Arm: st.Arm, Reason: st.Reason,
+				Evidence: st.Evidence, ConfigHash: e.ConfigDigest,
+			})
+		}
+	}
+	return nil
 }
 
 // JournalDecisionStore implements gateway.DecisionStore (+ DecisionScanner)
-// over journal decision rows. Seq maps to the journal rowid.
+// over journal decision rows. Seq maps to the journal rowid. All reads
+// serve from the backend replay cache; see Backend.
 type JournalDecisionStore struct {
-	journal *journal.Journal
-	mu      sync.Mutex
-	execs   map[string][]gateway.DecisionExecution
+	be *Backend
 }
 
 func toJournalDecision(d gateway.CommittedDecision) journal.Decision {
@@ -132,12 +213,17 @@ func (s *JournalDecisionStore) Commit(d gateway.CommittedDecision) (gateway.Comm
 	if err := d.Validate(); err != nil {
 		return gateway.CommittedDecision{}, false, err
 	}
-	seq, committed, err := s.journal.CommitDecision(toJournalDecision(d), "")
+	seq, committed, err := s.be.journal.CommitDecision(toJournalDecision(d), "")
 	if err != nil {
 		return gateway.CommittedDecision{}, false, err
 	}
+	s.be.mu.Lock()
+	defer s.be.mu.Unlock()
+	if err := s.be.syncLocked(); err != nil {
+		return gateway.CommittedDecision{}, false, err
+	}
 	if !committed {
-		stored, ok := s.Lookup(d.DecisionID)
+		stored, ok := s.lookupLocked(d.DecisionID)
 		if !ok {
 			return gateway.CommittedDecision{}, false, fmt.Errorf("journalstore: duplicate vanished")
 		}
@@ -147,45 +233,40 @@ func (s *JournalDecisionStore) Commit(d gateway.CommittedDecision) (gateway.Comm
 	return d, true, nil
 }
 
-// Lookup returns the committed decision, if any.
+// Lookup returns the committed decision, if any (index hit after a
+// usually-empty tail sync).
 func (s *JournalDecisionStore) Lookup(decisionID string) (gateway.CommittedDecision, bool) {
-	evs, err := s.journal.EventsSince(0)
-	if err != nil {
+	s.be.mu.Lock()
+	defer s.be.mu.Unlock()
+	if err := s.be.syncLocked(); err != nil {
 		return gateway.CommittedDecision{}, false
 	}
-	for _, e := range evs {
-		if e.Kind != "decision" {
-			continue
-		}
-		d, err := fromJournalDecision(e)
-		if err != nil {
-			continue
-		}
-		if d.DecisionID == decisionID {
-			return s.withExecutions(d), true
-		}
+	return s.lookupLocked(decisionID)
+}
+
+func (s *JournalDecisionStore) lookupLocked(decisionID string) (gateway.CommittedDecision, bool) {
+	i, ok := s.be.decByID[decisionID]
+	if !ok {
+		return gateway.CommittedDecision{}, false
 	}
-	return gateway.CommittedDecision{}, false
+	return s.withExecutions(s.be.decisions[i]), true
 }
 
 // MarkExecution records an execution-progress marker. Markers live in
-// memory plus a journal execution row family (kind "execution") so they
-// survive restart; the decision must be committed first.
+// memory (guarded by the backend mutex); the decision must be committed
+// first. Unchanged semantics: memory-only, like before.
 func (s *JournalDecisionStore) MarkExecution(e gateway.DecisionExecution) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.execs == nil {
-		s.execs = map[string][]gateway.DecisionExecution{}
-	}
-	s.execs[e.DecisionID] = append(s.execs[e.DecisionID], e)
+	s.be.mu.Lock()
+	defer s.be.mu.Unlock()
+	s.be.execs[e.DecisionID] = append(s.be.execs[e.DecisionID], e)
 	return nil
 }
 
 // Execution returns the latest marker for a decision, if any.
 func (s *JournalDecisionStore) Execution(id string) (gateway.DecisionExecution, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	ms := s.execs[id]
+	s.be.mu.Lock()
+	defer s.be.mu.Unlock()
+	ms := s.be.execs[id]
 	if len(ms) == 0 {
 		return gateway.DecisionExecution{}, false
 	}
@@ -194,33 +275,26 @@ func (s *JournalDecisionStore) Execution(id string) (gateway.DecisionExecution, 
 
 // Len counts committed decisions.
 func (s *JournalDecisionStore) Len() int {
-	evs, err := s.journal.EventsSince(0)
-	if err != nil {
+	s.be.mu.Lock()
+	defer s.be.mu.Unlock()
+	if err := s.be.syncLocked(); err != nil {
 		return 0
 	}
-	n := 0
-	for _, e := range evs {
-		if e.Kind == "decision" {
-			n++
-		}
-	}
-	return n
+	return len(s.be.decisions)
 }
 
 // Scan replays committed decisions in sequence order (budget recovery).
+// The snapshot is taken under lock; fn runs without it.
 func (s *JournalDecisionStore) Scan(fn func(gateway.CommittedDecision) bool) error {
-	evs, err := s.journal.EventsSince(0)
-	if err != nil {
+	s.be.mu.Lock()
+	if err := s.be.syncLocked(); err != nil {
+		s.be.mu.Unlock()
 		return err
 	}
-	for _, e := range evs {
-		if e.Kind != "decision" {
-			continue
-		}
-		d, err := fromJournalDecision(e)
-		if err != nil {
-			return err
-		}
+	snap := make([]gateway.CommittedDecision, len(s.be.decisions))
+	copy(snap, s.be.decisions)
+	s.be.mu.Unlock()
+	for _, d := range snap {
 		if !fn(d) {
 			break
 		}
@@ -233,9 +307,10 @@ func (s *JournalDecisionStore) withExecutions(d gateway.CommittedDecision) gatew
 }
 
 // JournalOutcomeStore implements outcome.OutcomeStore over journal outcome
-// rows with full event fidelity (all attempt fields round-trip).
+// rows with full event fidelity (all attempt fields round-trip). All
+// reads serve from the backend replay cache; see Backend.
 type JournalOutcomeStore struct {
-	journal *journal.Journal
+	be *Backend
 }
 
 func toJournalOutcome(ev outcome.OutcomeEvent) journal.SettledOutcome {
@@ -245,7 +320,7 @@ func toJournalOutcome(ev outcome.OutcomeEvent) journal.SettledOutcome {
 		Version: ev.Version, Supersedes: ev.Supersedes,
 		Status: string(ev.Status), DecidingAttempt: ev.DecidingAttemptID,
 		HumanReviewCost: ev.HumanReviewCostUSD,
-		VerifiedBy:         ev.VerifiedBy, VerifiedAt: ev.VerifiedAt,
+		VerifiedBy:      ev.VerifiedBy, VerifiedAt: ev.VerifiedAt,
 		CorrectedAt: ev.CorrectedAt, OccurredAt: ev.OccurredAt,
 	}
 	for _, a := range ev.Attempts {
@@ -321,8 +396,13 @@ func (s *JournalOutcomeStore) Submit(ev outcome.OutcomeEvent) (bool, error) {
 	if err := ev.Validate(); err != nil {
 		return false, err
 	}
-	applied, err := s.journal.SettleOutcome(toJournalOutcome(ev), "")
+	applied, err := s.be.journal.SettleOutcome(toJournalOutcome(ev), "")
 	if err != nil {
+		return false, err
+	}
+	s.be.mu.Lock()
+	defer s.be.mu.Unlock()
+	if err := s.be.syncLocked(); err != nil {
 		return false, err
 	}
 	if applied {
@@ -330,7 +410,7 @@ func (s *JournalOutcomeStore) Submit(ev outcome.OutcomeEvent) (bool, error) {
 	}
 	// Not applied: duplicate of latest (idempotent) or stale (refused).
 	// Distinguish by latest version, exactly like the file store.
-	latest, ok, err := s.journal.LatestVersion(ev.JobID)
+	latest, ok, err := s.be.journal.LatestVersion(ev.JobID)
 	if err != nil {
 		return false, err
 	}
@@ -340,75 +420,56 @@ func (s *JournalOutcomeStore) Submit(ev outcome.OutcomeEvent) (bool, error) {
 	return false, fmt.Errorf("journalstore: stale version %d for job %q (latest %d)", ev.Version, ev.JobID, latest)
 }
 
-// Latest returns the highest committed version for a job.
+// Latest returns the highest committed version for a job (index hit
+// after a usually-empty tail sync).
 func (s *JournalOutcomeStore) Latest(jobID string) (outcome.OutcomeEvent, bool) {
-	ver, ok, err := s.journal.LatestVersion(jobID)
-	if err != nil || !ok {
+	s.be.mu.Lock()
+	defer s.be.mu.Unlock()
+	if err := s.be.syncLocked(); err != nil {
 		return outcome.OutcomeEvent{}, false
 	}
-	evs, err := s.journal.EventsSince(0)
-	if err != nil {
+	i, ok := s.be.outLatest[jobID]
+	if !ok {
 		return outcome.OutcomeEvent{}, false
 	}
-	for _, e := range evs {
-		if e.Kind == "outcome" && e.JobID == jobID && e.Version == ver {
-			ev, err := fromJournalOutcome(e)
-			if err != nil {
-				return outcome.OutcomeEvent{}, false
-			}
-			return ev, true
-		}
-	}
-	return outcome.OutcomeEvent{}, false
+	return s.be.outcomes[i], true
 }
 
-// Events returns all committed events in sequence order.
+// Events returns all committed events in sequence order (snapshot copy).
 func (s *JournalOutcomeStore) Events() []outcome.OutcomeEvent {
-	evs, err := s.journal.EventsSince(0)
-	if err != nil {
+	s.be.mu.Lock()
+	defer s.be.mu.Unlock()
+	if err := s.be.syncLocked(); err != nil {
 		return nil
 	}
-	var out []outcome.OutcomeEvent
-	for _, e := range evs {
-		if e.Kind != "outcome" {
-			continue
-		}
-		ev, err := fromJournalOutcome(e)
-		if err != nil {
-			continue
-		}
-		out = append(out, ev)
-	}
+	out := make([]outcome.OutcomeEvent, len(s.be.outcomes))
+	copy(out, s.be.outcomes)
 	return out
 }
 
 // Len counts committed outcome rows (all versions, like the file store).
 func (s *JournalOutcomeStore) Len() int {
-	evs, err := s.journal.EventsSince(0)
-	if err != nil {
+	s.be.mu.Lock()
+	defer s.be.mu.Unlock()
+	if err := s.be.syncLocked(); err != nil {
 		return 0
 	}
-	n := 0
-	for _, e := range evs {
-		if e.Kind == "outcome" {
-			n++
-		}
-	}
-	return n
+	return len(s.be.outcomes)
 }
 
 // JournalSafetyStore implements gateway.SafetyEventSink over journal
 // safety rows. Seq maps to the journal rowid; timestamps come from the
 // row's commit time. Close is a no-op: the Backend owns the shared handle.
+// Reads serve from the backend replay cache; see Backend.
 type JournalSafetyStore struct {
-	journal *journal.Journal
-	mu      sync.Mutex
-	failed  bool
+	be     *Backend
+	mu     sync.Mutex
+	failed bool
 }
 
 // Append persists one safety transition before its effect is visible.
 func (s *JournalSafetyStore) Append(ev gateway.SafetyEvent) error {
-	_, ok, err := s.journal.RecordSafety(journal.SafetyTransition{
+	_, ok, err := s.be.journal.RecordSafety(journal.SafetyTransition{
 		Actor: ev.Actor, Type: ev.Type, Arm: ev.Arm,
 		Reason: ev.Reason, Evidence: ev.Evidence,
 	}, ev.ConfigHash)
@@ -421,30 +482,20 @@ func (s *JournalSafetyStore) Append(ev gateway.SafetyEvent) error {
 	if !ok {
 		return fmt.Errorf("journalstore: safety event not applied")
 	}
-	return nil
+	s.be.mu.Lock()
+	defer s.be.mu.Unlock()
+	return s.be.syncLocked()
 }
 
-// Events replays safety rows in sequence order.
+// Events replays safety rows in sequence order (snapshot copy).
 func (s *JournalSafetyStore) Events() ([]gateway.SafetyEvent, error) {
-	evs, err := s.journal.EventsSince(0)
-	if err != nil {
+	s.be.mu.Lock()
+	defer s.be.mu.Unlock()
+	if err := s.be.syncLocked(); err != nil {
 		return nil, err
 	}
-	var out []gateway.SafetyEvent
-	for _, e := range evs {
-		if e.Kind != "safety" {
-			continue
-		}
-		var st journal.SafetyTransition
-		if err := json.Unmarshal([]byte(e.Payload), &st); err != nil {
-			return nil, err
-		}
-		out = append(out, gateway.SafetyEvent{
-			Seq: e.Seq, At: timeRFC3339(e.CreatedNS), Actor: st.Actor,
-			Type: st.Type, Arm: st.Arm, Reason: st.Reason,
-			Evidence: st.Evidence, ConfigHash: e.ConfigDigest,
-		})
-	}
+	out := make([]gateway.SafetyEvent, len(s.be.safety))
+	copy(out, s.be.safety)
 	return out, nil
 }
 
