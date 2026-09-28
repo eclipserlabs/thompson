@@ -304,13 +304,6 @@ func buildRouter(cfg appConfig) (*gateway.Router, func(), error) {
 				cleanup()
 				return nil, nil, fmt.Errorf("outcome store: %w", err)
 			}
-			safetySink, err := gateway.NewSafetyStore(cfg.safetyPath)
-			if err != nil {
-				_ = outcomes.Close()
-				_ = decisions.Close()
-				cleanup()
-				return nil, nil, fmt.Errorf("safety store: %w", err)
-			}
 			prevCleanup := cleanup
 			cleanup = func() {
 				_ = outcomes.Close()
@@ -321,6 +314,14 @@ func buildRouter(cfg appConfig) (*gateway.Router, func(), error) {
 			rc.Outcomes = outcomes
 			rc.SettleAuth = bearerAuth(cfg.settleToken)
 			if cfg.costAware {
+				// Cost-aware only: plain verified binaries never needed a
+				// safety store (main behavior); requiring SAFETY_PATH
+				// here would break non-cost-aware boot.
+				safetySink, err := gateway.NewSafetyStore(cfg.safetyPath)
+				if err != nil {
+					cleanup()
+					return nil, nil, fmt.Errorf("safety store: %w", err)
+				}
 				if err := wireCostAware(cfg, &rc, decisions, outcomes, safetySink, &cleanup); err != nil {
 					cleanup()
 					return nil, nil, err
