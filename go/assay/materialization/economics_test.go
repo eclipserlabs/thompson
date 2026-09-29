@@ -16,28 +16,6 @@ import (
 // {1%, 5%, schema-change, enrichment-change}, zero incorrect C terminals.
 // testdata/mat_economics.json.
 
-type EconRow struct {
-	Mutation string `json:"mutation"`
-	Mode     string `json:"mode"`
-	Plan     string `json:"plan,omitempty"`
-	Exec     int    `json:"executed"`
-	Reused   int    `json:"reused"`
-	ExecNS   int64  `json:"exec_ns"`
-	VerifyNS int64  `json:"verify_ns"`
-	OverNS   int64  `json:"overhead_ns"`
-	TotalNS  int64  `json:"total_ns"`
-	StoreB   int64  `json:"store_bytes"`
-	Verdict  string `json:"verdict"`
-	TermEq   bool   `json:"terminal_eq_a"`
-	False    int    `json:"false_reuse"`
-}
-
-type EconReport struct {
-	Rows   []EconRow         `json:"rows"`
-	Gate   map[string]string `json:"charter_gate"`
-	Decomp map[string]string `json:"b_bp_c_decomposition"`
-}
-
 func econHarness(t *testing.T, n int, seed uint64) (Corpus, map[ModeID]*Runner) {
 	t.Helper()
 	base := GenCorpus(seed, n)

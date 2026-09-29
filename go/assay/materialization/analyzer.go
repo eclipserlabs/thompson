@@ -12,6 +12,31 @@ import (
 // materialization_opportunity, recomputation_frontier, break_even,
 // plan_counterfactuals. Deterministic, machine-readable output.
 
+// EconRow is one machine-readable benchmark row (shared schema for the
+// economics output and the offline analyzer input).
+type EconRow struct {
+	Mutation string `json:"mutation"`
+	Mode     string `json:"mode"`
+	Plan     string `json:"plan,omitempty"`
+	Exec     int    `json:"executed"`
+	Reused   int    `json:"reused"`
+	ExecNS   int64  `json:"exec_ns"`
+	VerifyNS int64  `json:"verify_ns"`
+	OverNS   int64  `json:"overhead_ns"`
+	TotalNS  int64  `json:"total_ns"`
+	StoreB   int64  `json:"store_bytes"`
+	Verdict  string `json:"verdict"`
+	TermEq   bool   `json:"terminal_eq_a"`
+	False    int    `json:"false_reuse"`
+}
+
+// EconReport is the machine-readable economics output.
+type EconReport struct {
+	Rows   []EconRow         `json:"rows"`
+	Gate   map[string]string `json:"charter_gate"`
+	Decomp map[string]string `json:"b_bp_c_decomposition"`
+}
+
 // History is the recorded assay past: per-version per-mode results.
 type History struct {
 	Versions []VersionResult `json:"versions"`
