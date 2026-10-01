@@ -92,3 +92,16 @@ conditions from the mission Phase 13 (zero violations; ≥40% preserved in
 held-out partial-invalidation cases; >1 family; transparent material;
 SARF ≥0.30 overall with ≥0.50 in one family; majority mechanical provenance;
 fresh-L0 equivalence), thresholds unmoved.
+
+## Addendum A — dev-phase probe hardening (before held-out, 2026-10-01)
+
+Two objective probe-authoring bugs found in dev runs (agent work correct,
+`go test ./...` green in all 5 dev runs):
+- DISJOINT#1 Sum probe called `Sum(-5, 10)`; real signature is
+  `Sum([]float64)`. Fixed to `Sum([]float64{-5, 10})==10`.
+- DISJOINT#1 rounding probe expected 2.67; `math.Round` half-up gives 2.68
+  for 2.675 (agent implementation matches the frozen prompt). Fixed want
+  to 2.68.
+Parser frozen at `v1-stream-state` after 5/5 dev runs parsed with zero
+UNKNOWN premises and token costs recovered on every slice. No task, prompt,
+schedule, gate, or run-cap change.

@@ -72,7 +72,7 @@ func TestProbeCross2(t *testing.T) {
 import "testing"
 
 func TestProbeDisjoint1Sum(t *testing.T) {
-	if got := Sum(-5, 10); got != 10 {
+	if got := Sum([]float64{-5, 10}); got != 10 {
 		t.Fatalf("probe: got %v want 10", got)
 	}
 }
@@ -82,8 +82,9 @@ func TestProbeDisjoint1Sum(t *testing.T) {
 import "testing"
 
 func TestProbeDisjoint1Round(t *testing.T) {
-	if got := LineTotal(Item{Price: 2.675}, 1); got != 2.67 {
-		t.Fatalf("probe: got %v want 2.67", got)
+	// math.Round half-up: 2.675*100=267.5 rounds to 268.
+	if got := LineTotal(Item{Price: 2.675}, 1); got != 2.68 {
+		t.Fatalf("probe: got %v want 2.68", got)
 	}
 }
 `,
