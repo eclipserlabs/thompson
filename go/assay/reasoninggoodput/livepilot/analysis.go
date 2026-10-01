@@ -11,7 +11,6 @@ package livepilot
 
 import (
 	"sort"
-	"strings"
 )
 
 // CallSlice is one model invocation with mechanical premises.
@@ -22,109 +21,10 @@ type CallSlice struct {
 	HasTools bool
 }
 
-// SegmentSteps groups stream parts into model invocations: a new slice
-// starts at each step-start; text/tool parts attach to the open slice.
-// readPaths maps tool-call parts to witnessed file paths (parser v1:
-// exact "path"/"file"/"filePath" input fields ending in known suffixes).
-func SegmentSteps(s *Session, witnessOf func(path string) (witness string, ok bool)) []CallSlice {
-	var out []CallSlice
-	cur := -1
-	seen := map[string]map[string]string{} // slice idx -> resource->witness
-	_ = seen
-	for _, p := range s.Parts {
-		if p.Type == "step-start" {
-			out = append(out, CallSlice{Index: len(out), Premises: map[string]string{}})
-			cur++
-			continue
-		}
-		if cur < 0 {
-			continue
-		}
-		if p.Type == "tool-call" {
-			out[cur].HasTools = true
-			for _, path := range toolPaths(p) {
-				if w, ok := witnessOf(path); ok {
-					out[cur].Premises[path] = w
-				} else {
-					out[cur].Premises[path] = "UNKNOWN"
-				}
-			}
-		}
-	}
-	// Cumulative union: slice N inherits all premises of slices < N.
-	// Cost accumulates wall time from part timestamps (parts without
-	// timestamps contribute nothing; SARF falls back to unit weights).
-	accum := map[string]string{}
-	for i := range out {
-		for k, v := range out[i].Premises {
-			if _, exists := accum[k]; !exists {
-				accum[k] = v
-			}
-		}
-		for k, v := range accum {
-			out[i].Premises[k] = v
-		}
-	}
-	// Second pass: attribute part wall times to slices by sequence order.
-	// (Parts were consumed in order above; recompute slice boundaries.)
-	boundaries := []int{}
-	for idx, part := range s.Parts {
-		if part.Type == "step-start" {
-			boundaries = append(boundaries, idx)
-		}
-	}
-	for i := range out {
-		start := 0
-		if i < len(boundaries) {
-			start = boundaries[i]
-		}
-		end := len(s.Parts)
-		if i+1 < len(boundaries) {
-			end = boundaries[i+1]
-		}
-		var cost int64
-		for _, part := range s.Parts[start:end] {
-			if part.End > part.Stamp {
-				cost += part.End - part.Stamp
-			}
-		}
-		out[i].CostNS = cost
-	}
-	return out
-}
-
-// toolPaths extracts candidate file paths from a tool-call part (v0:
-// string input fields that look like repo paths; refined after dev runs).
-func toolPaths(p Part) []string {
-	var out []string
-	lower := strings.ToLower(p.InputJSON)
-	_ = lower
-	// Best-effort: quoted strings ending in code suffixes.
-	in := p.InputJSON
-	for _, tok := range strings.FieldsFunc(in, func(r rune) bool {
-		return r == '"' || r == '\'' || r == ' ' || r == ',' || r == ':' || r == '{' || r == '}' || r == '[' || r == ']'
-	}) {
-		if (strings.HasSuffix(tok, ".go") || strings.HasSuffix(tok, ".md") || strings.HasSuffix(tok, ".mod")) && !strings.Contains(tok, "\n") && len(tok) < 128 {
-			tok = strings.TrimPrefix(tok, "./")
-			tok = strings.TrimPrefix(tok, "/")
-			out = append(out, tok)
-		}
-	}
-	sort.Strings(out)
-	return dedup(out)
-}
-
-func dedup(in []string) []string {
-	seen := map[string]bool{}
-	var out []string
-	for _, s := range in {
-		if !seen[s] {
-			seen[s] = true
-			out = append(out, s)
-		}
-	}
-	return out
-}
+// Live slices are built by BuildSlices (live.go), which groups stream parts
+// by messageID, resolves file premises by content-derived blob OIDs, and
+// prices turns by step token counts. The CallSlice/SARF/Counterfactual types
+// below consume those slices.
 
 // SARFResult holds the selectivity measurement.
 type SARFResult struct {

@@ -19,7 +19,7 @@ import (
 
 // ParserVersion is bumped whenever capture semantics change. Frozen before
 // held-out runs; recorded in every run record.
-const ParserVersion = "v0-skeleton"
+const ParserVersion = "v1-stream-state"
 
 // Part is one normalized stream event.
 type Part struct {
@@ -93,19 +93,35 @@ func ParseStream(path string) (*Session, error) {
 			if part != nil {
 				p.Output, _ = part["text"].(string)
 			}
-		case strings.Contains(ptype, "tool") || strings.Contains(typ, "tool"):
+		case ptype == "tool" || strings.Contains(typ, "tool"):
 			p.Type = "tool-call"
 			if part != nil {
 				p.Tool, _ = part["tool"].(string)
 				if p.Tool == "" {
 					p.Tool, _ = part["name"].(string)
 				}
-				if in, ok := part["input"]; ok {
-					b, _ := json.Marshal(in)
-					p.InputJSON = string(b)
+				// OpenCode v2 streams tool I/O under part.state
+				// ({status, input, output}); legacy flat shape kept too.
+				state, _ := part["state"].(map[string]interface{})
+				if state != nil {
+					if in, ok := state["input"]; ok {
+						b, _ := json.Marshal(in)
+						p.InputJSON = string(b)
+					}
+					if out, ok := state["output"].(string); ok {
+						p.Output = out
+					}
 				}
-				if out, ok := part["output"].(string); ok {
-					p.Output = out
+				if p.InputJSON == "" {
+					if in, ok := part["input"]; ok {
+						b, _ := json.Marshal(in)
+						p.InputJSON = string(b)
+					}
+				}
+				if p.Output == "" {
+					if out, ok := part["output"].(string); ok {
+						p.Output = out
+					}
 				}
 				if p.Tool == "" {
 					p.Tool, _ = obj["tool"].(string)
