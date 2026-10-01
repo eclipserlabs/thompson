@@ -18,6 +18,7 @@ import (
 
 func main() {
 	outDir := flag.String("out", "", "recorded run directory (stream.jsonl + run.json)")
+	workdirFlag := flag.String("workdir", "", "explicit worktree (for runs whose agent used relative paths)")
 	task := flag.String("task", "", "frozen task id")
 	change := flag.String("change", "", "frozen background change id (empty for clean runs)")
 	flag.Parse()
@@ -25,18 +26,21 @@ func main() {
 		fmt.Fprintln(os.Stderr, "out and task are required")
 		os.Exit(2)
 	}
-	if err := workup(*outDir, *task, *change); err != nil {
+	if err := workup(*outDir, *task, *change, *workdirFlag); err != nil {
 		fmt.Fprintln(os.Stderr, "analyze:", err)
 		os.Exit(1)
 	}
 }
 
-func workup(outDir, task, changeID string) error {
+func workup(outDir, task, changeID, workdirOverride string) error {
 	sess, err := livepilot.ParseStream(filepath.Join(outDir, "stream.jsonl"))
 	if err != nil {
 		return err
 	}
-	workdir := livepilot.CommonRoot(sess)
+	workdir := workdirOverride
+	if workdir == "" {
+		workdir = livepilot.CommonRoot(sess)
+	}
 	if st, err := os.Stat(filepath.Join(workdir, "go.mod")); err != nil || st.IsDir() {
 		return fmt.Errorf("derived workdir %q has no go.mod: %v", workdir, err)
 	}
