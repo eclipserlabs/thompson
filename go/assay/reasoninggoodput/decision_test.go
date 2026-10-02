@@ -12,6 +12,14 @@ import (
 // (frozen 2026-10-01, before held-out treatment comparisons). Reads
 // testdata/goodput_matrix.json (dev, frozen) plus held-out results.
 // Gate 1 (violations) uses held-out runs; gates 2-6 use the frozen matrix.
+//
+// HISTORICAL EVIDENCE CHECK, not an active product acceptance gate. This test
+// re-evaluates the #36 gates exactly as implemented against the committed
+// frozen fixture and asserts the recorded outcome. Per
+// docs/research/reasoning-goodput/EVIDENCE_ERRATUM.md (the authority):
+// gates 1-5 and 7 PASS; implemented gate 6 FAILS on the committed fixture;
+// the pre-registered gate-6 prose is ambiguous and is not reinterpreted
+// here; the original "7/7 PASS" claim is unsupported.
 
 // gateResult is one evaluated gate.
 type gateResult struct {
@@ -24,7 +32,7 @@ func loadMatrix(t *testing.T) []MatrixRow {
 	t.Helper()
 	raw, err := os.ReadFile(filepath.Join("testdata", "goodput_matrix.json"))
 	if err != nil {
-		t.Skip("matrix output absent (run TestGoodputMatrix first)")
+		t.Fatalf("frozen evidence fixture missing: %v", err)
 	}
 	var rows []MatrixRow
 	if err := json.Unmarshal(raw, &rows); err != nil {
@@ -42,8 +50,23 @@ func cell(rows []MatrixRow, workload, scenario, treat string) *MatrixRow {
 	return nil
 }
 
-// TestDecisionGates evaluates every frozen gate. A failing gate is reported
-// by name with numbers; thresholds are never adjusted here.
+// historicalOutcome is the corrected recorded result of each #36 gate as
+// implemented, evaluated on the committed fixture (EVIDENCE_ERRATUM.md).
+// It is NOT a statement that the thesis passes or fails a product gate.
+var historicalOutcome = map[string]bool{
+	"gate1-zero-violations":     true,
+	"gate2-40pct-two-systems":   true,
+	"gate3-selective-half":      true,
+	"gate4-mechanical-80pct":    true,
+	"gate5-opaque-useful":       true,
+	"gate6-overhead":            false, // implemented gate FAILS: git/disjoint-slices T4 1203ms >= T2 820ms
+	"gate7-no-second-authority": true,
+}
+
+// TestDecisionGates evaluates every frozen gate as implemented in #36 and
+// asserts the corrected historical outcome (historicalOutcome). Gate logic
+// and thresholds are unchanged; a gate whose evaluation diverges from its
+// recorded outcome in either direction fails the test.
 func TestDecisionGates(t *testing.T) {
 	rows := loadMatrix(t)
 	var gates []gateResult
@@ -254,14 +277,22 @@ func TestDecisionGates(t *testing.T) {
 	// no version tables owned; witnesses always re-read/native).
 	pass("gate7-no-second-authority", "REPRESENTATION_ANALYSIS.md + adapter review")
 
+	if len(gates) != len(historicalOutcome) {
+		t.Errorf("evaluated %d gates, historical record has %d", len(gates), len(historicalOutcome))
+	}
 	for _, g := range gates {
 		status := "PASS"
 		if !g.pass {
 			status = "FAIL"
 		}
 		t.Logf("%s %s: %s", status, g.name, g.detail)
-		if !g.pass {
-			t.Errorf("gate failed: %s: %s", g.name, g.detail)
+		want, ok := historicalOutcome[g.name]
+		if !ok {
+			t.Errorf("gate %s has no recorded historical outcome", g.name)
+			continue
+		}
+		if g.pass != want {
+			t.Errorf("historical evidence check: %s evaluated pass=%v, recorded outcome pass=%v (%s)", g.name, g.pass, want, g.detail)
 		}
 	}
 }

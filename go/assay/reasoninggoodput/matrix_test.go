@@ -3,13 +3,13 @@ package reasoninggoodput
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"testing"
 )
 
 // matrix_test.go: frozen comparison matrix. Every treatment × every Git +
 // HTTP scenario with fixed seeds/schedules, full TaskMetrics plus final
-// content digests. Machine output: testdata/goodput_matrix.json. This file
+// content digests. Machine output: testdata/goodput_matrix.json (frozen; see
+// fixture_test.go for the explicit -update regeneration path). This file
 // is the evidentiary basis for the Phase 16 decision gates.
 
 type MatrixRow struct {
@@ -96,16 +96,7 @@ func TestGoodputMatrix(t *testing.T) {
 		}
 	}
 
-	raw, err := json.MarshalIndent(rows, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll("testdata", 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile("testdata/goodput_matrix.json", raw, 0o644); err != nil {
-		t.Fatal(err)
-	}
+	emitFixture(t, "goodput_matrix.json", rows)
 	// Gate-relevant assertions live in the decision test (decision_test.go);
 	// this test asserts structural invariants only.
 	for _, r := range rows {
