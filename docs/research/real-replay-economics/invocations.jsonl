@@ -1,0 +1,4 @@
+{"event":"start","label":"smoke-1","at":"2026-10-02T13:08:44Z"}
+{"event":"end","label":"smoke-1","at":"2026-10-02T13:09:19Z","session":"ses_f0344bf03ffeg9TbIixp7XvDsu","model_calls":7,"wall_ms":34932}
+{"event":"start","label":"smoke-2","at":"2026-10-02T13:11:06Z","session":"ses_f0344bf03ffeg9TbIixp7XSm02"}
+{"event":"end","label":"smoke-2","at":"2026-10-02T13:11:34Z","session":"ses_f0344bf03ffeg9TbIixp7XSm02","model_calls":6,"wall_ms":26940}
