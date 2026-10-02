@@ -1,0 +1,2252 @@
+[
+  {
+    "workload": "git",
+    "scenario": "irrelevant-file-change",
+    "treatment": "T0",
+    "metrics": {
+      "treatment": "T0",
+      "work_executed": 400,
+      "work_accepted": 400,
+      "goodput": 1,
+      "discarded": 0,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 0,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 353948746,
+      "overhead_ns": 18356,
+      "retries": 0,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "git:src/main.txt",
+          "witness": "434ae49aa423318abf253b3a116706df51b12b63",
+          "provenance": "git"
+        }
+      ]
+    },
+    "final_digest": "ad63f9f4ef701931b77dd5044bb39cc87fe91b887d96f22ecce0374bef68c72f"
+  },
+  {
+    "workload": "git",
+    "scenario": "irrelevant-file-change",
+    "treatment": "T1",
+    "metrics": {
+      "treatment": "T1",
+      "work_executed": 400,
+      "work_accepted": 400,
+      "goodput": 1,
+      "discarded": 0,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 0,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 372717943,
+      "overhead_ns": 29333,
+      "retries": 0,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "git:src/main.txt",
+          "witness": "434ae49aa423318abf253b3a116706df51b12b63",
+          "provenance": "git"
+        }
+      ]
+    },
+    "final_digest": "ad63f9f4ef701931b77dd5044bb39cc87fe91b887d96f22ecce0374bef68c72f"
+  },
+  {
+    "workload": "git",
+    "scenario": "irrelevant-file-change",
+    "treatment": "T2",
+    "metrics": {
+      "treatment": "T2",
+      "work_executed": 400,
+      "work_accepted": 400,
+      "goodput": 1,
+      "discarded": 0,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 0,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 368882889,
+      "overhead_ns": 31368962,
+      "retries": 0,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "git:src/main.txt",
+          "witness": "434ae49aa423318abf253b3a116706df51b12b63",
+          "provenance": "git"
+        }
+      ]
+    },
+    "final_digest": "ad63f9f4ef701931b77dd5044bb39cc87fe91b887d96f22ecce0374bef68c72f"
+  },
+  {
+    "workload": "git",
+    "scenario": "irrelevant-file-change",
+    "treatment": "T3",
+    "metrics": {
+      "treatment": "T3",
+      "work_executed": 400,
+      "work_accepted": 400,
+      "goodput": 1,
+      "discarded": 0,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 0,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 360477987,
+      "overhead_ns": 20812,
+      "retries": 0,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "git:src/main.txt",
+          "witness": "434ae49aa423318abf253b3a116706df51b12b63",
+          "provenance": "git"
+        }
+      ]
+    },
+    "final_digest": "ad63f9f4ef701931b77dd5044bb39cc87fe91b887d96f22ecce0374bef68c72f"
+  },
+  {
+    "workload": "git",
+    "scenario": "irrelevant-file-change",
+    "treatment": "T4",
+    "metrics": {
+      "treatment": "T4",
+      "work_executed": 400,
+      "work_accepted": 400,
+      "goodput": 1,
+      "discarded": 0,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 0,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 513177256,
+      "overhead_ns": 29139,
+      "retries": 0,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "git:src/main.txt",
+          "witness": "434ae49aa423318abf253b3a116706df51b12b63",
+          "provenance": "git"
+        }
+      ]
+    },
+    "final_digest": "ad63f9f4ef701931b77dd5044bb39cc87fe91b887d96f22ecce0374bef68c72f"
+  },
+  {
+    "workload": "git",
+    "scenario": "premise-blob-change",
+    "treatment": "T0",
+    "metrics": {
+      "treatment": "T0",
+      "work_executed": 800,
+      "work_accepted": 400,
+      "goodput": 0.5,
+      "discarded": 400,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 1,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 463543974,
+      "overhead_ns": 38280,
+      "retries": 1,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "git:src/main.txt",
+          "witness": "909ae1e471b9895bc49eab93d048c33caf38b03d",
+          "provenance": "git"
+        }
+      ]
+    },
+    "final_digest": "50ffd72f037e15ce031d6a37c4faf52aa8f0f9b7b9939164ed5691afd58ec5e5"
+  },
+  {
+    "workload": "git",
+    "scenario": "premise-blob-change",
+    "treatment": "T1",
+    "metrics": {
+      "treatment": "T1",
+      "work_executed": 800,
+      "work_accepted": 400,
+      "goodput": 0.5,
+      "discarded": 400,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": true,
+      "coordination": 2,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 559859215,
+      "overhead_ns": 67190,
+      "retries": 1,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "git:src/main.txt",
+          "witness": "909ae1e471b9895bc49eab93d048c33caf38b03d",
+          "provenance": "git"
+        }
+      ]
+    },
+    "final_digest": "50ffd72f037e15ce031d6a37c4faf52aa8f0f9b7b9939164ed5691afd58ec5e5"
+  },
+  {
+    "workload": "git",
+    "scenario": "premise-blob-change",
+    "treatment": "T2",
+    "metrics": {
+      "treatment": "T2",
+      "work_executed": 800,
+      "work_accepted": 400,
+      "goodput": 0.5,
+      "discarded": 400,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 1,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 633227459,
+      "overhead_ns": 88173659,
+      "retries": 1,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "git:src/main.txt",
+          "witness": "909ae1e471b9895bc49eab93d048c33caf38b03d",
+          "provenance": "git"
+        }
+      ]
+    },
+    "final_digest": "50ffd72f037e15ce031d6a37c4faf52aa8f0f9b7b9939164ed5691afd58ec5e5"
+  },
+  {
+    "workload": "git",
+    "scenario": "premise-blob-change",
+    "treatment": "T3",
+    "metrics": {
+      "treatment": "T3",
+      "work_executed": 800,
+      "work_accepted": 400,
+      "goodput": 0.5,
+      "discarded": 400,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 1,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 552381503,
+      "overhead_ns": 71156,
+      "retries": 1,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "git:src/main.txt",
+          "witness": "909ae1e471b9895bc49eab93d048c33caf38b03d",
+          "provenance": "git"
+        }
+      ]
+    },
+    "final_digest": "50ffd72f037e15ce031d6a37c4faf52aa8f0f9b7b9939164ed5691afd58ec5e5"
+  },
+  {
+    "workload": "git",
+    "scenario": "premise-blob-change",
+    "treatment": "T4",
+    "metrics": {
+      "treatment": "T4",
+      "work_executed": 800,
+      "work_accepted": 400,
+      "goodput": 0.5,
+      "discarded": 400,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 1,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 453006535,
+      "overhead_ns": 66650,
+      "retries": 1,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "git:src/main.txt",
+          "witness": "909ae1e471b9895bc49eab93d048c33caf38b03d",
+          "provenance": "git"
+        }
+      ]
+    },
+    "final_digest": "50ffd72f037e15ce031d6a37c4faf52aa8f0f9b7b9939164ed5691afd58ec5e5"
+  },
+  {
+    "workload": "git",
+    "scenario": "unrelated-never-read",
+    "treatment": "T0",
+    "metrics": {
+      "treatment": "T0",
+      "work_executed": 400,
+      "work_accepted": 400,
+      "goodput": 1,
+      "discarded": 0,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 0,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 382466302,
+      "overhead_ns": 18902,
+      "retries": 0,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "git:src/main.txt",
+          "witness": "434ae49aa423318abf253b3a116706df51b12b63",
+          "provenance": "git"
+        }
+      ]
+    },
+    "final_digest": "ad63f9f4ef701931b77dd5044bb39cc87fe91b887d96f22ecce0374bef68c72f"
+  },
+  {
+    "workload": "git",
+    "scenario": "unrelated-never-read",
+    "treatment": "T1",
+    "metrics": {
+      "treatment": "T1",
+      "work_executed": 400,
+      "work_accepted": 400,
+      "goodput": 1,
+      "discarded": 0,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 0,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 387357472,
+      "overhead_ns": 31459,
+      "retries": 0,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "git:src/main.txt",
+          "witness": "434ae49aa423318abf253b3a116706df51b12b63",
+          "provenance": "git"
+        }
+      ]
+    },
+    "final_digest": "ad63f9f4ef701931b77dd5044bb39cc87fe91b887d96f22ecce0374bef68c72f"
+  },
+  {
+    "workload": "git",
+    "scenario": "unrelated-never-read",
+    "treatment": "T2",
+    "metrics": {
+      "treatment": "T2",
+      "work_executed": 400,
+      "work_accepted": 400,
+      "goodput": 1,
+      "discarded": 0,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 0,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 337102583,
+      "overhead_ns": 33831416,
+      "retries": 0,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "git:src/main.txt",
+          "witness": "434ae49aa423318abf253b3a116706df51b12b63",
+          "provenance": "git"
+        }
+      ]
+    },
+    "final_digest": "ad63f9f4ef701931b77dd5044bb39cc87fe91b887d96f22ecce0374bef68c72f"
+  },
+  {
+    "workload": "git",
+    "scenario": "unrelated-never-read",
+    "treatment": "T3",
+    "metrics": {
+      "treatment": "T3",
+      "work_executed": 400,
+      "work_accepted": 400,
+      "goodput": 1,
+      "discarded": 0,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 0,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 308233445,
+      "overhead_ns": 30411,
+      "retries": 0,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "git:src/main.txt",
+          "witness": "434ae49aa423318abf253b3a116706df51b12b63",
+          "provenance": "git"
+        }
+      ]
+    },
+    "final_digest": "ad63f9f4ef701931b77dd5044bb39cc87fe91b887d96f22ecce0374bef68c72f"
+  },
+  {
+    "workload": "git",
+    "scenario": "unrelated-never-read",
+    "treatment": "T4",
+    "metrics": {
+      "treatment": "T4",
+      "work_executed": 400,
+      "work_accepted": 400,
+      "goodput": 1,
+      "discarded": 0,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 0,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 329962220,
+      "overhead_ns": 37720,
+      "retries": 0,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "git:src/main.txt",
+          "witness": "434ae49aa423318abf253b3a116706df51b12b63",
+          "provenance": "git"
+        }
+      ]
+    },
+    "final_digest": "ad63f9f4ef701931b77dd5044bb39cc87fe91b887d96f22ecce0374bef68c72f"
+  },
+  {
+    "workload": "git",
+    "scenario": "disjoint-slices",
+    "treatment": "T0",
+    "metrics": {
+      "treatment": "T0",
+      "work_executed": 1600,
+      "work_accepted": 800,
+      "goodput": 0.5,
+      "discarded": 800,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 1,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 532786425,
+      "overhead_ns": 40519,
+      "retries": 1,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "git:lib/util.txt",
+          "witness": "9d68905b5453569ef977cdacd001d541bf598c36",
+          "provenance": "git"
+        },
+        {
+          "resource": "git:src/main.txt",
+          "witness": "434ae49aa423318abf253b3a116706df51b12b63",
+          "provenance": "git"
+        }
+      ]
+    },
+    "final_digest": "c2be302f69fd89e0186534a2f9ad656605b0572bb9fa4e9e5289818dde7c2987"
+  },
+  {
+    "workload": "git",
+    "scenario": "disjoint-slices",
+    "treatment": "T1",
+    "metrics": {
+      "treatment": "T1",
+      "work_executed": 1600,
+      "work_accepted": 800,
+      "goodput": 0.5,
+      "discarded": 800,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": true,
+      "coordination": 2,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 878269957,
+      "overhead_ns": 73131,
+      "retries": 1,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "git:lib/util.txt",
+          "witness": "9d68905b5453569ef977cdacd001d541bf598c36",
+          "provenance": "git"
+        },
+        {
+          "resource": "git:src/main.txt",
+          "witness": "434ae49aa423318abf253b3a116706df51b12b63",
+          "provenance": "git"
+        }
+      ]
+    },
+    "final_digest": "c2be302f69fd89e0186534a2f9ad656605b0572bb9fa4e9e5289818dde7c2987"
+  },
+  {
+    "workload": "git",
+    "scenario": "disjoint-slices",
+    "treatment": "T2",
+    "metrics": {
+      "treatment": "T2",
+      "work_executed": 1600,
+      "work_accepted": 800,
+      "goodput": 0.5,
+      "discarded": 800,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 1,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 820065904,
+      "overhead_ns": 181665966,
+      "retries": 1,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "git:lib/util.txt",
+          "witness": "9d68905b5453569ef977cdacd001d541bf598c36",
+          "provenance": "git"
+        },
+        {
+          "resource": "git:src/main.txt",
+          "witness": "434ae49aa423318abf253b3a116706df51b12b63",
+          "provenance": "git"
+        }
+      ]
+    },
+    "final_digest": "c2be302f69fd89e0186534a2f9ad656605b0572bb9fa4e9e5289818dde7c2987"
+  },
+  {
+    "workload": "git",
+    "scenario": "disjoint-slices",
+    "treatment": "T3",
+    "metrics": {
+      "treatment": "T3",
+      "work_executed": 1600,
+      "work_accepted": 800,
+      "goodput": 0.5,
+      "discarded": 800,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 1,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 636543599,
+      "overhead_ns": 49902,
+      "retries": 1,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "git:lib/util.txt",
+          "witness": "9d68905b5453569ef977cdacd001d541bf598c36",
+          "provenance": "git"
+        },
+        {
+          "resource": "git:src/main.txt",
+          "witness": "434ae49aa423318abf253b3a116706df51b12b63",
+          "provenance": "git"
+        }
+      ]
+    },
+    "final_digest": "c2be302f69fd89e0186534a2f9ad656605b0572bb9fa4e9e5289818dde7c2987"
+  },
+  {
+    "workload": "git",
+    "scenario": "disjoint-slices",
+    "treatment": "T4",
+    "metrics": {
+      "treatment": "T4",
+      "work_executed": 1200,
+      "work_accepted": 800,
+      "goodput": 0.6666666666666666,
+      "discarded": 400,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 1,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 1203259849,
+      "overhead_ns": 35371420,
+      "retries": 1,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "git:lib/util.txt",
+          "witness": "9d68905b5453569ef977cdacd001d541bf598c36",
+          "provenance": "git"
+        },
+        {
+          "resource": "git:src/main.txt",
+          "witness": "434ae49aa423318abf253b3a116706df51b12b63",
+          "provenance": "git"
+        }
+      ]
+    },
+    "final_digest": "c2be302f69fd89e0186534a2f9ad656605b0572bb9fa4e9e5289818dde7c2987"
+  },
+  {
+    "workload": "git",
+    "scenario": "base-moves-premises-same",
+    "treatment": "T0",
+    "metrics": {
+      "treatment": "T0",
+      "work_executed": 400,
+      "work_accepted": 400,
+      "goodput": 1,
+      "discarded": 0,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 0,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 394991047,
+      "overhead_ns": 22676,
+      "retries": 0,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "git:src/main.txt",
+          "witness": "434ae49aa423318abf253b3a116706df51b12b63",
+          "provenance": "git"
+        }
+      ]
+    },
+    "final_digest": "ad63f9f4ef701931b77dd5044bb39cc87fe91b887d96f22ecce0374bef68c72f"
+  },
+  {
+    "workload": "git",
+    "scenario": "base-moves-premises-same",
+    "treatment": "T1",
+    "metrics": {
+      "treatment": "T1",
+      "work_executed": 400,
+      "work_accepted": 400,
+      "goodput": 1,
+      "discarded": 0,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 0,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 383318062,
+      "overhead_ns": 26158,
+      "retries": 0,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "git:src/main.txt",
+          "witness": "434ae49aa423318abf253b3a116706df51b12b63",
+          "provenance": "git"
+        }
+      ]
+    },
+    "final_digest": "ad63f9f4ef701931b77dd5044bb39cc87fe91b887d96f22ecce0374bef68c72f"
+  },
+  {
+    "workload": "git",
+    "scenario": "base-moves-premises-same",
+    "treatment": "T2",
+    "metrics": {
+      "treatment": "T2",
+      "work_executed": 400,
+      "work_accepted": 400,
+      "goodput": 1,
+      "discarded": 0,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 0,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 435220444,
+      "overhead_ns": 34190289,
+      "retries": 0,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "git:src/main.txt",
+          "witness": "434ae49aa423318abf253b3a116706df51b12b63",
+          "provenance": "git"
+        }
+      ]
+    },
+    "final_digest": "ad63f9f4ef701931b77dd5044bb39cc87fe91b887d96f22ecce0374bef68c72f"
+  },
+  {
+    "workload": "git",
+    "scenario": "base-moves-premises-same",
+    "treatment": "T3",
+    "metrics": {
+      "treatment": "T3",
+      "work_executed": 400,
+      "work_accepted": 400,
+      "goodput": 1,
+      "discarded": 0,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 0,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 426283934,
+      "overhead_ns": 36554,
+      "retries": 0,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "git:src/main.txt",
+          "witness": "434ae49aa423318abf253b3a116706df51b12b63",
+          "provenance": "git"
+        }
+      ]
+    },
+    "final_digest": "ad63f9f4ef701931b77dd5044bb39cc87fe91b887d96f22ecce0374bef68c72f"
+  },
+  {
+    "workload": "git",
+    "scenario": "base-moves-premises-same",
+    "treatment": "T4",
+    "metrics": {
+      "treatment": "T4",
+      "work_executed": 400,
+      "work_accepted": 400,
+      "goodput": 1,
+      "discarded": 0,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 0,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 391612485,
+      "overhead_ns": 24988,
+      "retries": 0,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "git:src/main.txt",
+          "witness": "434ae49aa423318abf253b3a116706df51b12b63",
+          "provenance": "git"
+        }
+      ]
+    },
+    "final_digest": "ad63f9f4ef701931b77dd5044bb39cc87fe91b887d96f22ecce0374bef68c72f"
+  },
+  {
+    "workload": "git",
+    "scenario": "opaque-multi-blob",
+    "treatment": "T0",
+    "metrics": {
+      "treatment": "T0",
+      "work_executed": 800,
+      "work_accepted": 400,
+      "goodput": 0.5,
+      "discarded": 400,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 1,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 681384588,
+      "overhead_ns": 33160,
+      "retries": 1,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "git:docs/notes.txt",
+          "witness": "d4b5d2e7a856813817ac50ffdf0f5e0f7c11989c",
+          "provenance": "opaque"
+        },
+        {
+          "resource": "git:lib/util.txt",
+          "witness": "e53649982e080e1f77ec6da432083e79558913f3",
+          "provenance": "opaque"
+        },
+        {
+          "resource": "git:src/main.txt",
+          "witness": "434ae49aa423318abf253b3a116706df51b12b63",
+          "provenance": "opaque"
+        }
+      ]
+    },
+    "final_digest": "692c6379f80274720c27bae3712ce92adf80882ce6b4cfbb670019a5332928ff"
+  },
+  {
+    "workload": "git",
+    "scenario": "opaque-multi-blob",
+    "treatment": "T1",
+    "metrics": {
+      "treatment": "T1",
+      "work_executed": 800,
+      "work_accepted": 400,
+      "goodput": 0.5,
+      "discarded": 400,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": true,
+      "coordination": 2,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 810911663,
+      "overhead_ns": 67512,
+      "retries": 1,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "git:docs/notes.txt",
+          "witness": "d4b5d2e7a856813817ac50ffdf0f5e0f7c11989c",
+          "provenance": "opaque"
+        },
+        {
+          "resource": "git:lib/util.txt",
+          "witness": "e53649982e080e1f77ec6da432083e79558913f3",
+          "provenance": "opaque"
+        },
+        {
+          "resource": "git:src/main.txt",
+          "witness": "434ae49aa423318abf253b3a116706df51b12b63",
+          "provenance": "opaque"
+        }
+      ]
+    },
+    "final_digest": "692c6379f80274720c27bae3712ce92adf80882ce6b4cfbb670019a5332928ff"
+  },
+  {
+    "workload": "git",
+    "scenario": "opaque-multi-blob",
+    "treatment": "T2",
+    "metrics": {
+      "treatment": "T2",
+      "work_executed": 800,
+      "work_accepted": 400,
+      "goodput": 0.5,
+      "discarded": 400,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 1,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 838200805,
+      "overhead_ns": 217075126,
+      "retries": 1,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "git:docs/notes.txt",
+          "witness": "d4b5d2e7a856813817ac50ffdf0f5e0f7c11989c",
+          "provenance": "opaque"
+        },
+        {
+          "resource": "git:lib/util.txt",
+          "witness": "e53649982e080e1f77ec6da432083e79558913f3",
+          "provenance": "opaque"
+        },
+        {
+          "resource": "git:src/main.txt",
+          "witness": "434ae49aa423318abf253b3a116706df51b12b63",
+          "provenance": "opaque"
+        }
+      ]
+    },
+    "final_digest": "692c6379f80274720c27bae3712ce92adf80882ce6b4cfbb670019a5332928ff"
+  },
+  {
+    "workload": "git",
+    "scenario": "opaque-multi-blob",
+    "treatment": "T3",
+    "metrics": {
+      "treatment": "T3",
+      "work_executed": 800,
+      "work_accepted": 400,
+      "goodput": 0.5,
+      "discarded": 400,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 1,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 676683814,
+      "overhead_ns": 35273,
+      "retries": 1,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "git:docs/notes.txt",
+          "witness": "d4b5d2e7a856813817ac50ffdf0f5e0f7c11989c",
+          "provenance": "opaque"
+        },
+        {
+          "resource": "git:lib/util.txt",
+          "witness": "e53649982e080e1f77ec6da432083e79558913f3",
+          "provenance": "opaque"
+        },
+        {
+          "resource": "git:src/main.txt",
+          "witness": "434ae49aa423318abf253b3a116706df51b12b63",
+          "provenance": "opaque"
+        }
+      ]
+    },
+    "final_digest": "692c6379f80274720c27bae3712ce92adf80882ce6b4cfbb670019a5332928ff"
+  },
+  {
+    "workload": "git",
+    "scenario": "opaque-multi-blob",
+    "treatment": "T4",
+    "metrics": {
+      "treatment": "T4",
+      "work_executed": 800,
+      "work_accepted": 400,
+      "goodput": 0.5,
+      "discarded": 400,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 1,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 569962995,
+      "overhead_ns": 48143,
+      "retries": 1,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "git:docs/notes.txt",
+          "witness": "d4b5d2e7a856813817ac50ffdf0f5e0f7c11989c",
+          "provenance": "opaque"
+        },
+        {
+          "resource": "git:lib/util.txt",
+          "witness": "e53649982e080e1f77ec6da432083e79558913f3",
+          "provenance": "opaque"
+        },
+        {
+          "resource": "git:src/main.txt",
+          "witness": "434ae49aa423318abf253b3a116706df51b12b63",
+          "provenance": "opaque"
+        }
+      ]
+    },
+    "final_digest": "692c6379f80274720c27bae3712ce92adf80882ce6b4cfbb670019a5332928ff"
+  },
+  {
+    "workload": "git",
+    "scenario": "unconsumed-file",
+    "treatment": "T0",
+    "metrics": {
+      "treatment": "T0",
+      "work_executed": 400,
+      "work_accepted": 400,
+      "goodput": 1,
+      "discarded": 0,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 0,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 400172396,
+      "overhead_ns": 27670,
+      "retries": 0,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "git:src/main.txt",
+          "witness": "434ae49aa423318abf253b3a116706df51b12b63",
+          "provenance": "git"
+        }
+      ]
+    },
+    "final_digest": "ad63f9f4ef701931b77dd5044bb39cc87fe91b887d96f22ecce0374bef68c72f"
+  },
+  {
+    "workload": "git",
+    "scenario": "unconsumed-file",
+    "treatment": "T1",
+    "metrics": {
+      "treatment": "T1",
+      "work_executed": 400,
+      "work_accepted": 400,
+      "goodput": 1,
+      "discarded": 0,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 0,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 501112669,
+      "overhead_ns": 33213,
+      "retries": 0,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "git:src/main.txt",
+          "witness": "434ae49aa423318abf253b3a116706df51b12b63",
+          "provenance": "git"
+        }
+      ]
+    },
+    "final_digest": "ad63f9f4ef701931b77dd5044bb39cc87fe91b887d96f22ecce0374bef68c72f"
+  },
+  {
+    "workload": "git",
+    "scenario": "unconsumed-file",
+    "treatment": "T2",
+    "metrics": {
+      "treatment": "T2",
+      "work_executed": 800,
+      "work_accepted": 400,
+      "goodput": 0.5,
+      "discarded": 400,
+      "false_conflict": true,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 1,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 801134984,
+      "overhead_ns": 192040217,
+      "retries": 1,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "git:src/main.txt",
+          "witness": "434ae49aa423318abf253b3a116706df51b12b63",
+          "provenance": "git"
+        }
+      ]
+    },
+    "final_digest": "ad63f9f4ef701931b77dd5044bb39cc87fe91b887d96f22ecce0374bef68c72f"
+  },
+  {
+    "workload": "git",
+    "scenario": "unconsumed-file",
+    "treatment": "T3",
+    "metrics": {
+      "treatment": "T3",
+      "work_executed": 400,
+      "work_accepted": 400,
+      "goodput": 1,
+      "discarded": 0,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 0,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 452593554,
+      "overhead_ns": 16190,
+      "retries": 0,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "git:src/main.txt",
+          "witness": "434ae49aa423318abf253b3a116706df51b12b63",
+          "provenance": "git"
+        }
+      ]
+    },
+    "final_digest": "ad63f9f4ef701931b77dd5044bb39cc87fe91b887d96f22ecce0374bef68c72f"
+  },
+  {
+    "workload": "git",
+    "scenario": "unconsumed-file",
+    "treatment": "T4",
+    "metrics": {
+      "treatment": "T4",
+      "work_executed": 400,
+      "work_accepted": 400,
+      "goodput": 1,
+      "discarded": 0,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 0,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 391933530,
+      "overhead_ns": 24189,
+      "retries": 0,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "git:src/main.txt",
+          "witness": "434ae49aa423318abf253b3a116706df51b12b63",
+          "provenance": "git"
+        }
+      ]
+    },
+    "final_digest": "ad63f9f4ef701931b77dd5044bb39cc87fe91b887d96f22ecce0374bef68c72f"
+  },
+  {
+    "workload": "http",
+    "scenario": "irrelevant-field-change",
+    "treatment": "T0",
+    "metrics": {
+      "treatment": "T0",
+      "work_executed": 800,
+      "work_accepted": 400,
+      "goodput": 0.5,
+      "discarded": 400,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 1,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 3981403,
+      "overhead_ns": 6548,
+      "retries": 1,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "http:/doc#price",
+          "witness": "\"342a6d5b053abb0b0ea0bddc44b5ab91460c6a735590130509ac31d493447d1f\"",
+          "provenance": "field"
+        }
+      ]
+    },
+    "final_digest": "d9b65f64d1eb8957b64a2b825d538303890fd417e73bd9c2dfc02e006a0ecf93"
+  },
+  {
+    "workload": "http",
+    "scenario": "irrelevant-field-change",
+    "treatment": "T1",
+    "metrics": {
+      "treatment": "T1",
+      "work_executed": 400,
+      "work_accepted": 400,
+      "goodput": 1,
+      "discarded": 0,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 0,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 742630,
+      "overhead_ns": 3512,
+      "retries": 0,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "http:/doc#price",
+          "witness": "\"03539466c82f15af615145ee33c28b1281993d8f293177976862f481840d23ee\"",
+          "provenance": "field"
+        }
+      ]
+    },
+    "final_digest": "d9b65f64d1eb8957b64a2b825d538303890fd417e73bd9c2dfc02e006a0ecf93"
+  },
+  {
+    "workload": "http",
+    "scenario": "irrelevant-field-change",
+    "treatment": "T2",
+    "metrics": {
+      "treatment": "T2",
+      "work_executed": 800,
+      "work_accepted": 400,
+      "goodput": 0.5,
+      "discarded": 400,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 1,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 1976571,
+      "overhead_ns": 678233,
+      "retries": 1,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "http:/doc#price",
+          "witness": "\"342a6d5b053abb0b0ea0bddc44b5ab91460c6a735590130509ac31d493447d1f\"",
+          "provenance": "field"
+        }
+      ]
+    },
+    "final_digest": "d9b65f64d1eb8957b64a2b825d538303890fd417e73bd9c2dfc02e006a0ecf93"
+  },
+  {
+    "workload": "http",
+    "scenario": "irrelevant-field-change",
+    "treatment": "T3",
+    "metrics": {
+      "treatment": "T3",
+      "work_executed": 800,
+      "work_accepted": 400,
+      "goodput": 0.5,
+      "discarded": 400,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 1,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 1334265,
+      "overhead_ns": 5010,
+      "retries": 1,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "http:/doc#price",
+          "witness": "\"342a6d5b053abb0b0ea0bddc44b5ab91460c6a735590130509ac31d493447d1f\"",
+          "provenance": "field"
+        }
+      ]
+    },
+    "final_digest": "d9b65f64d1eb8957b64a2b825d538303890fd417e73bd9c2dfc02e006a0ecf93"
+  },
+  {
+    "workload": "http",
+    "scenario": "irrelevant-field-change",
+    "treatment": "T4",
+    "metrics": {
+      "treatment": "T4",
+      "work_executed": 400,
+      "work_accepted": 400,
+      "goodput": 1,
+      "discarded": 0,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 1,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 1089832,
+      "overhead_ns": 7187,
+      "retries": 1,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "http:/doc#price",
+          "witness": "\"342a6d5b053abb0b0ea0bddc44b5ab91460c6a735590130509ac31d493447d1f\"",
+          "provenance": "field"
+        }
+      ]
+    },
+    "final_digest": "d9b65f64d1eb8957b64a2b825d538303890fd417e73bd9c2dfc02e006a0ecf93"
+  },
+  {
+    "workload": "http",
+    "scenario": "used-field-change",
+    "treatment": "T0",
+    "metrics": {
+      "treatment": "T0",
+      "work_executed": 800,
+      "work_accepted": 400,
+      "goodput": 0.5,
+      "discarded": 400,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 1,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 1635717,
+      "overhead_ns": 5436,
+      "retries": 1,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "http:/doc#price",
+          "witness": "\"713212c07a04699b72827d2db33704ea48db4951374be868aa655bd1050ce8ee\"",
+          "provenance": "field"
+        }
+      ]
+    },
+    "final_digest": "d9b65f64d1eb8957b64a2b825d538303890fd417e73bd9c2dfc02e006a0ecf93"
+  },
+  {
+    "workload": "http",
+    "scenario": "used-field-change",
+    "treatment": "T1",
+    "metrics": {
+      "treatment": "T1",
+      "work_executed": 400,
+      "work_accepted": 400,
+      "goodput": 1,
+      "discarded": 0,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 0,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 767168,
+      "overhead_ns": 3577,
+      "retries": 0,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "http:/doc#price",
+          "witness": "\"03539466c82f15af615145ee33c28b1281993d8f293177976862f481840d23ee\"",
+          "provenance": "field"
+        }
+      ]
+    },
+    "final_digest": "d9b65f64d1eb8957b64a2b825d538303890fd417e73bd9c2dfc02e006a0ecf93"
+  },
+  {
+    "workload": "http",
+    "scenario": "used-field-change",
+    "treatment": "T2",
+    "metrics": {
+      "treatment": "T2",
+      "work_executed": 800,
+      "work_accepted": 400,
+      "goodput": 0.5,
+      "discarded": 400,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 1,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 1744662,
+      "overhead_ns": 441810,
+      "retries": 1,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "http:/doc#price",
+          "witness": "\"713212c07a04699b72827d2db33704ea48db4951374be868aa655bd1050ce8ee\"",
+          "provenance": "field"
+        }
+      ]
+    },
+    "final_digest": "d9b65f64d1eb8957b64a2b825d538303890fd417e73bd9c2dfc02e006a0ecf93"
+  },
+  {
+    "workload": "http",
+    "scenario": "used-field-change",
+    "treatment": "T3",
+    "metrics": {
+      "treatment": "T3",
+      "work_executed": 800,
+      "work_accepted": 400,
+      "goodput": 0.5,
+      "discarded": 400,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 1,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 1279844,
+      "overhead_ns": 5099,
+      "retries": 1,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "http:/doc#price",
+          "witness": "\"713212c07a04699b72827d2db33704ea48db4951374be868aa655bd1050ce8ee\"",
+          "provenance": "field"
+        }
+      ]
+    },
+    "final_digest": "d9b65f64d1eb8957b64a2b825d538303890fd417e73bd9c2dfc02e006a0ecf93"
+  },
+  {
+    "workload": "http",
+    "scenario": "used-field-change",
+    "treatment": "T4",
+    "metrics": {
+      "treatment": "T4",
+      "work_executed": 800,
+      "work_accepted": 400,
+      "goodput": 0.5,
+      "discarded": 400,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 1,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 1425954,
+      "overhead_ns": 5542,
+      "retries": 1,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "http:/doc#price",
+          "witness": "\"713212c07a04699b72827d2db33704ea48db4951374be868aa655bd1050ce8ee\"",
+          "provenance": "field"
+        }
+      ]
+    },
+    "final_digest": "d9b65f64d1eb8957b64a2b825d538303890fd417e73bd9c2dfc02e006a0ecf93"
+  },
+  {
+    "workload": "http",
+    "scenario": "independent-resource",
+    "treatment": "T0",
+    "metrics": {
+      "treatment": "T0",
+      "work_executed": 400,
+      "work_accepted": 400,
+      "goodput": 1,
+      "discarded": 0,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 0,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 1550084,
+      "overhead_ns": 1739,
+      "retries": 0,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "http:/doc#price",
+          "witness": "\"03539466c82f15af615145ee33c28b1281993d8f293177976862f481840d23ee\"",
+          "provenance": "field"
+        }
+      ]
+    },
+    "final_digest": "d9b65f64d1eb8957b64a2b825d538303890fd417e73bd9c2dfc02e006a0ecf93"
+  },
+  {
+    "workload": "http",
+    "scenario": "independent-resource",
+    "treatment": "T1",
+    "metrics": {
+      "treatment": "T1",
+      "work_executed": 400,
+      "work_accepted": 400,
+      "goodput": 1,
+      "discarded": 0,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 0,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 671024,
+      "overhead_ns": 2962,
+      "retries": 0,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "http:/doc#price",
+          "witness": "\"03539466c82f15af615145ee33c28b1281993d8f293177976862f481840d23ee\"",
+          "provenance": "field"
+        }
+      ]
+    },
+    "final_digest": "d9b65f64d1eb8957b64a2b825d538303890fd417e73bd9c2dfc02e006a0ecf93"
+  },
+  {
+    "workload": "http",
+    "scenario": "independent-resource",
+    "treatment": "T2",
+    "metrics": {
+      "treatment": "T2",
+      "work_executed": 400,
+      "work_accepted": 400,
+      "goodput": 1,
+      "discarded": 0,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 0,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 1109357,
+      "overhead_ns": 207552,
+      "retries": 0,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "http:/doc#price",
+          "witness": "\"03539466c82f15af615145ee33c28b1281993d8f293177976862f481840d23ee\"",
+          "provenance": "field"
+        }
+      ]
+    },
+    "final_digest": "d9b65f64d1eb8957b64a2b825d538303890fd417e73bd9c2dfc02e006a0ecf93"
+  },
+  {
+    "workload": "http",
+    "scenario": "independent-resource",
+    "treatment": "T3",
+    "metrics": {
+      "treatment": "T3",
+      "work_executed": 400,
+      "work_accepted": 400,
+      "goodput": 1,
+      "discarded": 0,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 0,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 947208,
+      "overhead_ns": 2799,
+      "retries": 0,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "http:/doc#price",
+          "witness": "\"03539466c82f15af615145ee33c28b1281993d8f293177976862f481840d23ee\"",
+          "provenance": "field"
+        }
+      ]
+    },
+    "final_digest": "d9b65f64d1eb8957b64a2b825d538303890fd417e73bd9c2dfc02e006a0ecf93"
+  },
+  {
+    "workload": "http",
+    "scenario": "independent-resource",
+    "treatment": "T4",
+    "metrics": {
+      "treatment": "T4",
+      "work_executed": 400,
+      "work_accepted": 400,
+      "goodput": 1,
+      "discarded": 0,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 0,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 1359341,
+      "overhead_ns": 5173,
+      "retries": 0,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "http:/doc#price",
+          "witness": "\"03539466c82f15af615145ee33c28b1281993d8f293177976862f481840d23ee\"",
+          "provenance": "field"
+        }
+      ]
+    },
+    "final_digest": "d9b65f64d1eb8957b64a2b825d538303890fd417e73bd9c2dfc02e006a0ecf93"
+  },
+  {
+    "workload": "http",
+    "scenario": "two-independent-fields",
+    "treatment": "T0",
+    "metrics": {
+      "treatment": "T0",
+      "work_executed": 1600,
+      "work_accepted": 800,
+      "goodput": 0.5,
+      "discarded": 800,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 1,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 3234149,
+      "overhead_ns": 14437,
+      "retries": 1,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "http:/doc#note",
+          "witness": "\"4d8ca09b96ac76f639ce3e65f8803cbe60848bd71c2d9f923bf1109317200ba8\"",
+          "provenance": "field"
+        },
+        {
+          "resource": "http:/doc#price",
+          "witness": "\"4d8ca09b96ac76f639ce3e65f8803cbe60848bd71c2d9f923bf1109317200ba8\"",
+          "provenance": "field"
+        }
+      ]
+    },
+    "final_digest": "b7e6013f449f1e7810817a11085cf7779ad1d2f4d67e87d7465762594011108c"
+  },
+  {
+    "workload": "http",
+    "scenario": "two-independent-fields",
+    "treatment": "T1",
+    "metrics": {
+      "treatment": "T1",
+      "work_executed": 800,
+      "work_accepted": 800,
+      "goodput": 1,
+      "discarded": 0,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 0,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 1286947,
+      "overhead_ns": 5885,
+      "retries": 0,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "http:/doc#note",
+          "witness": "\"03539466c82f15af615145ee33c28b1281993d8f293177976862f481840d23ee\"",
+          "provenance": "field"
+        },
+        {
+          "resource": "http:/doc#price",
+          "witness": "\"03539466c82f15af615145ee33c28b1281993d8f293177976862f481840d23ee\"",
+          "provenance": "field"
+        }
+      ]
+    },
+    "final_digest": "b7e6013f449f1e7810817a11085cf7779ad1d2f4d67e87d7465762594011108c"
+  },
+  {
+    "workload": "http",
+    "scenario": "two-independent-fields",
+    "treatment": "T2",
+    "metrics": {
+      "treatment": "T2",
+      "work_executed": 1600,
+      "work_accepted": 800,
+      "goodput": 0.5,
+      "discarded": 800,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 1,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 4261210,
+      "overhead_ns": 748498,
+      "retries": 1,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "http:/doc#note",
+          "witness": "\"4d8ca09b96ac76f639ce3e65f8803cbe60848bd71c2d9f923bf1109317200ba8\"",
+          "provenance": "field"
+        },
+        {
+          "resource": "http:/doc#price",
+          "witness": "\"4d8ca09b96ac76f639ce3e65f8803cbe60848bd71c2d9f923bf1109317200ba8\"",
+          "provenance": "field"
+        }
+      ]
+    },
+    "final_digest": "b7e6013f449f1e7810817a11085cf7779ad1d2f4d67e87d7465762594011108c"
+  },
+  {
+    "workload": "http",
+    "scenario": "two-independent-fields",
+    "treatment": "T3",
+    "metrics": {
+      "treatment": "T3",
+      "work_executed": 1600,
+      "work_accepted": 800,
+      "goodput": 0.5,
+      "discarded": 800,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 1,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 3079059,
+      "overhead_ns": 8607,
+      "retries": 1,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "http:/doc#note",
+          "witness": "\"4d8ca09b96ac76f639ce3e65f8803cbe60848bd71c2d9f923bf1109317200ba8\"",
+          "provenance": "field"
+        },
+        {
+          "resource": "http:/doc#price",
+          "witness": "\"4d8ca09b96ac76f639ce3e65f8803cbe60848bd71c2d9f923bf1109317200ba8\"",
+          "provenance": "field"
+        }
+      ]
+    },
+    "final_digest": "b7e6013f449f1e7810817a11085cf7779ad1d2f4d67e87d7465762594011108c"
+  },
+  {
+    "workload": "http",
+    "scenario": "two-independent-fields",
+    "treatment": "T4",
+    "metrics": {
+      "treatment": "T4",
+      "work_executed": 1200,
+      "work_accepted": 800,
+      "goodput": 0.6666666666666666,
+      "discarded": 400,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 1,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 1805548,
+      "overhead_ns": 10991,
+      "retries": 1,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "http:/doc#note",
+          "witness": "\"4d8ca09b96ac76f639ce3e65f8803cbe60848bd71c2d9f923bf1109317200ba8\"",
+          "provenance": "field"
+        },
+        {
+          "resource": "http:/doc#price",
+          "witness": "\"4d8ca09b96ac76f639ce3e65f8803cbe60848bd71c2d9f923bf1109317200ba8\"",
+          "provenance": "field"
+        }
+      ]
+    },
+    "final_digest": "b7e6013f449f1e7810817a11085cf7779ad1d2f4d67e87d7465762594011108c"
+  },
+  {
+    "workload": "http",
+    "scenario": "invariant-shared-value",
+    "treatment": "T0",
+    "metrics": {
+      "treatment": "T0",
+      "work_executed": 800,
+      "work_accepted": 400,
+      "goodput": 0.5,
+      "discarded": 400,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 1,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 2324991,
+      "overhead_ns": 5973,
+      "retries": 1,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "http:/doc#price",
+          "witness": "\"01d60185094f722e3a45102d8034481d07d51fa4e5215543de3e4287c2544215\"",
+          "provenance": "field"
+        }
+      ]
+    },
+    "final_digest": "ee79e3ff3cfc537a197a7274df3f9f830388dce00a3de5f76137d38c6290287f"
+  },
+  {
+    "workload": "http",
+    "scenario": "invariant-shared-value",
+    "treatment": "T1",
+    "metrics": {
+      "treatment": "T1",
+      "work_executed": 400,
+      "work_accepted": 400,
+      "goodput": 1,
+      "discarded": 0,
+      "false_conflict": false,
+      "missed_conflict": true,
+      "late_conflict": false,
+      "coordination": 0,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 940524,
+      "overhead_ns": 3783,
+      "retries": 0,
+      "oracle_ok": false,
+      "accept_premises": [
+        {
+          "resource": "http:/doc#price",
+          "witness": "\"03539466c82f15af615145ee33c28b1281993d8f293177976862f481840d23ee\"",
+          "provenance": "field"
+        }
+      ]
+    },
+    "final_digest": "d9b65f64d1eb8957b64a2b825d538303890fd417e73bd9c2dfc02e006a0ecf93"
+  },
+  {
+    "workload": "http",
+    "scenario": "invariant-shared-value",
+    "treatment": "T2",
+    "metrics": {
+      "treatment": "T2",
+      "work_executed": 800,
+      "work_accepted": 400,
+      "goodput": 0.5,
+      "discarded": 400,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 1,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 3410812,
+      "overhead_ns": 457132,
+      "retries": 1,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "http:/doc#price",
+          "witness": "\"01d60185094f722e3a45102d8034481d07d51fa4e5215543de3e4287c2544215\"",
+          "provenance": "field"
+        }
+      ]
+    },
+    "final_digest": "ee79e3ff3cfc537a197a7274df3f9f830388dce00a3de5f76137d38c6290287f"
+  },
+  {
+    "workload": "http",
+    "scenario": "invariant-shared-value",
+    "treatment": "T3",
+    "metrics": {
+      "treatment": "T3",
+      "work_executed": 800,
+      "work_accepted": 400,
+      "goodput": 0.5,
+      "discarded": 400,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 1,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 1485575,
+      "overhead_ns": 5476,
+      "retries": 1,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "http:/doc#price",
+          "witness": "\"01d60185094f722e3a45102d8034481d07d51fa4e5215543de3e4287c2544215\"",
+          "provenance": "field"
+        }
+      ]
+    },
+    "final_digest": "ee79e3ff3cfc537a197a7274df3f9f830388dce00a3de5f76137d38c6290287f"
+  },
+  {
+    "workload": "http",
+    "scenario": "invariant-shared-value",
+    "treatment": "T4",
+    "metrics": {
+      "treatment": "T4",
+      "work_executed": 800,
+      "work_accepted": 400,
+      "goodput": 0.5,
+      "discarded": 400,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 1,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 1491139,
+      "overhead_ns": 5255,
+      "retries": 1,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "http:/doc#price",
+          "witness": "\"01d60185094f722e3a45102d8034481d07d51fa4e5215543de3e4287c2544215\"",
+          "provenance": "field"
+        }
+      ]
+    },
+    "final_digest": "ee79e3ff3cfc537a197a7274df3f9f830388dce00a3de5f76137d38c6290287f"
+  },
+  {
+    "workload": "http",
+    "scenario": "opaque-multi-field",
+    "treatment": "T0",
+    "metrics": {
+      "treatment": "T0",
+      "work_executed": 800,
+      "work_accepted": 400,
+      "goodput": 0.5,
+      "discarded": 400,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 1,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 2096638,
+      "overhead_ns": 5833,
+      "retries": 1,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "http:/doc#note",
+          "witness": "\"342a6d5b053abb0b0ea0bddc44b5ab91460c6a735590130509ac31d493447d1f\"",
+          "provenance": "opaque"
+        },
+        {
+          "resource": "http:/doc#price",
+          "witness": "\"342a6d5b053abb0b0ea0bddc44b5ab91460c6a735590130509ac31d493447d1f\"",
+          "provenance": "opaque"
+        },
+        {
+          "resource": "http:/doc#qty",
+          "witness": "\"342a6d5b053abb0b0ea0bddc44b5ab91460c6a735590130509ac31d493447d1f\"",
+          "provenance": "opaque"
+        }
+      ]
+    },
+    "final_digest": "d9b65f64d1eb8957b64a2b825d538303890fd417e73bd9c2dfc02e006a0ecf93"
+  },
+  {
+    "workload": "http",
+    "scenario": "opaque-multi-field",
+    "treatment": "T1",
+    "metrics": {
+      "treatment": "T1",
+      "work_executed": 400,
+      "work_accepted": 400,
+      "goodput": 1,
+      "discarded": 0,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 0,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 1046925,
+      "overhead_ns": 3769,
+      "retries": 0,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "http:/doc#note",
+          "witness": "\"03539466c82f15af615145ee33c28b1281993d8f293177976862f481840d23ee\"",
+          "provenance": "opaque"
+        },
+        {
+          "resource": "http:/doc#price",
+          "witness": "\"03539466c82f15af615145ee33c28b1281993d8f293177976862f481840d23ee\"",
+          "provenance": "opaque"
+        },
+        {
+          "resource": "http:/doc#qty",
+          "witness": "\"03539466c82f15af615145ee33c28b1281993d8f293177976862f481840d23ee\"",
+          "provenance": "opaque"
+        }
+      ]
+    },
+    "final_digest": "d9b65f64d1eb8957b64a2b825d538303890fd417e73bd9c2dfc02e006a0ecf93"
+  },
+  {
+    "workload": "http",
+    "scenario": "opaque-multi-field",
+    "treatment": "T2",
+    "metrics": {
+      "treatment": "T2",
+      "work_executed": 800,
+      "work_accepted": 400,
+      "goodput": 0.5,
+      "discarded": 400,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 1,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 3190515,
+      "overhead_ns": 1099922,
+      "retries": 1,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "http:/doc#note",
+          "witness": "\"342a6d5b053abb0b0ea0bddc44b5ab91460c6a735590130509ac31d493447d1f\"",
+          "provenance": "opaque"
+        },
+        {
+          "resource": "http:/doc#price",
+          "witness": "\"342a6d5b053abb0b0ea0bddc44b5ab91460c6a735590130509ac31d493447d1f\"",
+          "provenance": "opaque"
+        },
+        {
+          "resource": "http:/doc#qty",
+          "witness": "\"342a6d5b053abb0b0ea0bddc44b5ab91460c6a735590130509ac31d493447d1f\"",
+          "provenance": "opaque"
+        }
+      ]
+    },
+    "final_digest": "d9b65f64d1eb8957b64a2b825d538303890fd417e73bd9c2dfc02e006a0ecf93"
+  },
+  {
+    "workload": "http",
+    "scenario": "opaque-multi-field",
+    "treatment": "T3",
+    "metrics": {
+      "treatment": "T3",
+      "work_executed": 800,
+      "work_accepted": 400,
+      "goodput": 0.5,
+      "discarded": 400,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 1,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 1914171,
+      "overhead_ns": 6001,
+      "retries": 1,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "http:/doc#note",
+          "witness": "\"342a6d5b053abb0b0ea0bddc44b5ab91460c6a735590130509ac31d493447d1f\"",
+          "provenance": "opaque"
+        },
+        {
+          "resource": "http:/doc#price",
+          "witness": "\"342a6d5b053abb0b0ea0bddc44b5ab91460c6a735590130509ac31d493447d1f\"",
+          "provenance": "opaque"
+        },
+        {
+          "resource": "http:/doc#qty",
+          "witness": "\"342a6d5b053abb0b0ea0bddc44b5ab91460c6a735590130509ac31d493447d1f\"",
+          "provenance": "opaque"
+        }
+      ]
+    },
+    "final_digest": "d9b65f64d1eb8957b64a2b825d538303890fd417e73bd9c2dfc02e006a0ecf93"
+  },
+  {
+    "workload": "http",
+    "scenario": "opaque-multi-field",
+    "treatment": "T4",
+    "metrics": {
+      "treatment": "T4",
+      "work_executed": 800,
+      "work_accepted": 400,
+      "goodput": 0.5,
+      "discarded": 400,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 1,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 1864501,
+      "overhead_ns": 5019,
+      "retries": 1,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "http:/doc#note",
+          "witness": "\"342a6d5b053abb0b0ea0bddc44b5ab91460c6a735590130509ac31d493447d1f\"",
+          "provenance": "opaque"
+        },
+        {
+          "resource": "http:/doc#price",
+          "witness": "\"342a6d5b053abb0b0ea0bddc44b5ab91460c6a735590130509ac31d493447d1f\"",
+          "provenance": "opaque"
+        },
+        {
+          "resource": "http:/doc#qty",
+          "witness": "\"342a6d5b053abb0b0ea0bddc44b5ab91460c6a735590130509ac31d493447d1f\"",
+          "provenance": "opaque"
+        }
+      ]
+    },
+    "final_digest": "d9b65f64d1eb8957b64a2b825d538303890fd417e73bd9c2dfc02e006a0ecf93"
+  },
+  {
+    "workload": "http",
+    "scenario": "unconsumed-context",
+    "treatment": "T0",
+    "metrics": {
+      "treatment": "T0",
+      "work_executed": 800,
+      "work_accepted": 400,
+      "goodput": 0.5,
+      "discarded": 400,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 1,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 3699587,
+      "overhead_ns": 27610,
+      "retries": 1,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "http:/doc#price",
+          "witness": "\"57130ac4ac30c34a44c5d9b59184bb985ade5b9cb80003e0a4caadd55229e33d\"",
+          "provenance": "field"
+        }
+      ]
+    },
+    "final_digest": "d9b65f64d1eb8957b64a2b825d538303890fd417e73bd9c2dfc02e006a0ecf93"
+  },
+  {
+    "workload": "http",
+    "scenario": "unconsumed-context",
+    "treatment": "T1",
+    "metrics": {
+      "treatment": "T1",
+      "work_executed": 400,
+      "work_accepted": 400,
+      "goodput": 1,
+      "discarded": 0,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 0,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 2331308,
+      "overhead_ns": 5494,
+      "retries": 0,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "http:/doc#price",
+          "witness": "\"03539466c82f15af615145ee33c28b1281993d8f293177976862f481840d23ee\"",
+          "provenance": "field"
+        }
+      ]
+    },
+    "final_digest": "d9b65f64d1eb8957b64a2b825d538303890fd417e73bd9c2dfc02e006a0ecf93"
+  },
+  {
+    "workload": "http",
+    "scenario": "unconsumed-context",
+    "treatment": "T2",
+    "metrics": {
+      "treatment": "T2",
+      "work_executed": 800,
+      "work_accepted": 400,
+      "goodput": 0.5,
+      "discarded": 400,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 1,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 5271759,
+      "overhead_ns": 1466386,
+      "retries": 1,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "http:/doc#price",
+          "witness": "\"57130ac4ac30c34a44c5d9b59184bb985ade5b9cb80003e0a4caadd55229e33d\"",
+          "provenance": "field"
+        }
+      ]
+    },
+    "final_digest": "d9b65f64d1eb8957b64a2b825d538303890fd417e73bd9c2dfc02e006a0ecf93"
+  },
+  {
+    "workload": "http",
+    "scenario": "unconsumed-context",
+    "treatment": "T3",
+    "metrics": {
+      "treatment": "T3",
+      "work_executed": 800,
+      "work_accepted": 400,
+      "goodput": 0.5,
+      "discarded": 400,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 1,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 3942764,
+      "overhead_ns": 4533,
+      "retries": 1,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "http:/doc#price",
+          "witness": "\"57130ac4ac30c34a44c5d9b59184bb985ade5b9cb80003e0a4caadd55229e33d\"",
+          "provenance": "field"
+        }
+      ]
+    },
+    "final_digest": "d9b65f64d1eb8957b64a2b825d538303890fd417e73bd9c2dfc02e006a0ecf93"
+  },
+  {
+    "workload": "http",
+    "scenario": "unconsumed-context",
+    "treatment": "T4",
+    "metrics": {
+      "treatment": "T4",
+      "work_executed": 400,
+      "work_accepted": 400,
+      "goodput": 1,
+      "discarded": 0,
+      "false_conflict": false,
+      "missed_conflict": false,
+      "late_conflict": false,
+      "coordination": 1,
+      "unknown": false,
+      "crashed": false,
+      "wall_ns": 2059963,
+      "overhead_ns": 8848,
+      "retries": 1,
+      "oracle_ok": true,
+      "accept_premises": [
+        {
+          "resource": "http:/doc#price",
+          "witness": "\"57130ac4ac30c34a44c5d9b59184bb985ade5b9cb80003e0a4caadd55229e33d\"",
+          "provenance": "field"
+        }
+      ]
+    },
+    "final_digest": "d9b65f64d1eb8957b64a2b825d538303890fd417e73bd9c2dfc02e006a0ecf93"
+  }
+]
