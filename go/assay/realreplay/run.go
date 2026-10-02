@@ -116,6 +116,9 @@ func (r *Runner) invoke(ctx context.Context, label, ws, msg, session string) (*R
 		if err := ExportSession(ws, st.SessionID, rec.Export); err != nil {
 			return nil, err
 		}
+		if err := fillUsageFromExport(st, rec.Export); err != nil {
+			return nil, err
+		}
 	}
 	_ = writeJSON(filepath.Join(dir, "calls.json"), st)
 	_ = writeJSON(filepath.Join(dir, "invocation.json"), inv)
@@ -303,4 +306,53 @@ func sortedKeys(m map[string]string) []string {
 	}
 	sort.Strings(ks)
 	return ks
+}
+
+// fillUsageFromExport takes each call's usage from OpenCode's stored
+// assistant message (the stream omits the final step_finish when the
+// process exits). Where the stream also reported usage, both must agree
+// exactly; a disagreement aborts the run as a telemetry failure.
+func fillUsageFromExport(st *Stream, export string) error {
+	b, err := os.ReadFile(export)
+	if err != nil {
+		return err
+	}
+	var exp struct {
+		Messages []struct {
+			ID     string                 `json:"id"`
+			Type   string                 `json:"type"`
+			Finish string                 `json:"finish"`
+			Tokens map[string]interface{} `json:"tokens"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(b, &exp); err != nil {
+		return err
+	}
+	byID := map[string]int{}
+	for i, m := range exp.Messages {
+		byID[m.ID] = i
+	}
+	for _, c := range st.Calls {
+		i, ok := byID[c.MessageID]
+		if !ok || exp.Messages[i].Tokens == nil {
+			continue
+		}
+		tk := exp.Messages[i].Tokens
+		var t Tokens
+		t.Input, _ = num(tk, "input")
+		t.Output, _ = num(tk, "output")
+		t.Reasoning, t.ReasoningExposed = num(tk, "reasoning")
+		if cache, ok := tk["cache"].(map[string]interface{}); ok {
+			t.CacheRead, _ = num(cache, "read")
+			t.CacheWrite, _ = num(cache, "write")
+		}
+		if c.Usage && (t.Input != c.Tokens.Input || t.Output != c.Tokens.Output || t.Reasoning != c.Tokens.Reasoning || t.CacheRead != c.Tokens.CacheRead || t.CacheWrite != c.Tokens.CacheWrite) {
+			return fmt.Errorf("usage mismatch for %s: stream %+v export %+v", c.MessageID, c.Tokens, t)
+		}
+		c.Tokens, c.Usage = t, true
+		if c.Finish == "" {
+			c.Finish = exp.Messages[i].Finish
+		}
+	}
+	return nil
 }

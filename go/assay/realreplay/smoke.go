@@ -3,7 +3,9 @@ package realreplay
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
 )
 
 // SmokeReport summarizes the two unscored setup invocations.
@@ -90,6 +92,85 @@ func (r *Runner) Smoke(ctx context.Context) (*SmokeReport, error) {
 		rep.ResumeCalls = len(c.Stream.Calls)
 		for _, k := range c.Stream.Calls {
 			rep.ResumeTokens = append(rep.ResumeTokens, k.Tokens)
+		}
+	}
+	if err != nil {
+		rep.Notes = append(rep.Notes, err.Error())
+	}
+	return rep, nil
+}
+
+// SmokeResume re-attempts smoke-2 from the recorded smoke-1 run (its
+// export, parsed calls and premises), after the pre-freeze path fix. The
+// fixtures are deterministic, so the authorities are rebuilt identically.
+func (r *Runner) SmokeResume(ctx context.Context) (*SmokeReport, error) {
+	rep := &SmokeReport{S0Tools: map[string]int{}}
+	dir := filepath.Join(r.Out, "runs", "smoke-1")
+	st, err := ParseStream(filepath.Join(dir, "stream.jsonl"))
+	if err != nil {
+		return nil, err
+	}
+	export := filepath.Join(dir, "export.json")
+	if err := fillUsageFromExport(st, export); err != nil {
+		return nil, err
+	}
+	base := filepath.Join(r.Work, "smoke2")
+	if err := ClearDir(base); err != nil {
+		return nil, err
+	}
+	ws := filepath.Join(r.Work, "ws-smoke")
+	aw, aw0, err := NewAuthority(filepath.Join(base, "authw"), HTTPWorkspace())
+	if err != nil {
+		return nil, err
+	}
+	srv, err := NewHTTPAuthority(HTTPAddr, HTTPS0())
+	if err != nil {
+		return nil, err
+	}
+	defer srv.Close()
+	for p, b := range HTTPMutations["H1"] {
+		srv.Set(p, b)
+	}
+	// First stale call from the smoke-1 premises recorded in report.json:
+	// the /pricing/widget fetch. Recomputed here from tool inputs.
+	j := -1
+	for i, c := range st.Calls {
+		for _, t := range c.Tools {
+			if t.Tool == "webfetch" && strings.HasSuffix(str(t.Input, "url"), "/pricing/widget") && j < 0 {
+				j = i
+			}
+		}
+	}
+	rep.S0Calls, rep.FirstStale = len(st.Calls), j
+	for _, c := range st.Calls {
+		rep.S0Tokens = append(rep.S0Tokens, c.Tokens)
+	}
+	if j <= 0 {
+		return rep, fmt.Errorf("no preserved prefix")
+	}
+	snap, err := SnapshotFiles(st.Calls[j].Snapshot)
+	if err != nil {
+		return rep, err
+	}
+	if err := setWorkspace(aw, ws, aw0, snap); err != nil {
+		return rep, err
+	}
+	c, cs, err := r.resume(ctx, "smoke-2", ws, export, j, "Sm02")
+	rep.Continuation = cs
+	if c != nil {
+		rep.ResumeCalls = len(c.Stream.Calls)
+		for _, k := range c.Stream.Calls {
+			rep.ResumeTokens = append(rep.ResumeTokens, k.Tokens)
+			for _, t := range k.Tools {
+				rep.S0Tools["resume:"+t.Tool]++
+			}
+		}
+		served := srv.Log()
+		_ = writeJSON(filepath.Join(c.Dir, "http-served.json"), served)
+		if q, err := os.ReadFile(filepath.Join(ws, "quote.json")); err == nil {
+			exp, _ := ExpectFrom(srv.State())
+			ok, out := OracleHTTP(ws, exp)
+			rep.Notes = append(rep.Notes, fmt.Sprintf("resume quote.json=%s oracle(S1) pass=%v %s", strings.TrimSpace(string(q)), ok, out))
 		}
 	}
 	if err != nil {

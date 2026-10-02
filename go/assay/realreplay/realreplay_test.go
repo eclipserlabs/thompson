@@ -361,3 +361,26 @@ func TestParseRealOpenCodeStream(t *testing.T) {
 		t.Fatalf("tool %+v", s.Calls[0].Tools)
 	}
 }
+
+func TestUsageFromExportFillsFinalCall(t *testing.T) {
+	dir := filepath.Join("..", "..", "..", "docs", "research", "real-replay-economics", "runs", "smoke-1")
+	s, err := ParseStream(filepath.Join(dir, "stream.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := s.Calls[len(s.Calls)-1]
+	if last.Usage {
+		t.Fatal("expected the recorded stream to omit the final step_finish")
+	}
+	if err := fillUsageFromExport(s, filepath.Join(dir, "export.json")); err != nil {
+		t.Fatal(err)
+	}
+	for i, c := range s.Calls {
+		if !c.Usage {
+			t.Fatalf("call %d still lacks usage", i)
+		}
+	}
+	if last.Tokens.Input != 821 || last.Tokens.Output != 44 || last.Tokens.CacheRead != 9841 {
+		t.Fatalf("final call usage %+v", last.Tokens)
+	}
+}

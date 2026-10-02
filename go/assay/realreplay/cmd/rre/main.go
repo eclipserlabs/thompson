@@ -31,7 +31,17 @@ func main() {
 		fmt.Fprintln(os.Stderr, "usage: rre -out DIR [-work DIR] [-rep b] [-h1x] smoke|probes|git|http|decide")
 		os.Exit(2)
 	}
-	r := &realreplay.Runner{Work: *work, Out: *out, Cap: 20, Timeout: 20 * time.Minute, ResumeMessage: "Continue."}
+	absOut, err := filepath.Abs(*out)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "rre:", err)
+		os.Exit(2)
+	}
+	absWork, err := filepath.Abs(*work)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "rre:", err)
+		os.Exit(2)
+	}
+	r := &realreplay.Runner{Work: absWork, Out: absOut, Cap: 20, Timeout: 20 * time.Minute, ResumeMessage: "Continue."}
 	ctx := context.Background()
 	if err := run(ctx, r, flag.Arg(0), *rep, *h1x); err != nil {
 		fmt.Fprintln(os.Stderr, "rre:", err)
@@ -56,6 +66,12 @@ func run(ctx context.Context, r *realreplay.Runner, cmd, rep string, h1x bool) e
 		rp, err := r.Smoke(ctx)
 		if rp != nil {
 			_ = save(filepath.Join(r.Out, "smoke", "report.json"), rp)
+		}
+		return err
+	case "smoke2":
+		rp, err := r.SmokeResume(ctx)
+		if rp != nil {
+			_ = save(filepath.Join(r.Out, "smoke", "report-smoke2.json"), rp)
 		}
 		return err
 	case "probes":
