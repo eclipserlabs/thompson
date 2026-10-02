@@ -26,6 +26,7 @@ func main() {
 	work := flag.String("work", "/private/tmp/rre-work", "scratch root for authorities and workspaces")
 	rep := flag.String("rep", "", "repetition suffix (\"\" or \"b\")")
 	h1x := flag.Bool("h1x", false, "also run the H1x second-change case")
+	only := flag.String("only", "", "limit a family to one mutation (repetitions: G1 or H1)")
 	flag.Parse()
 	if *out == "" || flag.NArg() != 1 {
 		fmt.Fprintln(os.Stderr, "usage: rre -out DIR [-work DIR] [-rep b] [-h1x] smoke|probes|git|http|decide")
@@ -43,7 +44,7 @@ func main() {
 	}
 	r := &realreplay.Runner{Work: absWork, Out: absOut, Cap: 20, Timeout: 20 * time.Minute, ResumeMessage: "Continue."}
 	ctx := context.Background()
-	if err := run(ctx, r, flag.Arg(0), *rep, *h1x); err != nil {
+	if err := run(ctx, r, flag.Arg(0), *rep, *h1x, *only); err != nil {
 		fmt.Fprintln(os.Stderr, "rre:", err)
 		os.Exit(1)
 	}
@@ -60,7 +61,7 @@ func save(path string, v interface{}) error {
 	return os.WriteFile(path, append(b, '\n'), 0o644)
 }
 
-func run(ctx context.Context, r *realreplay.Runner, cmd, rep string, h1x bool) error {
+func run(ctx context.Context, r *realreplay.Runner, cmd, rep string, h1x bool, only string) error {
 	switch cmd {
 	case "smoke":
 		rp, err := r.Smoke(ctx)
@@ -81,10 +82,18 @@ func run(ctx context.Context, r *realreplay.Runner, cmd, rep string, h1x bool) e
 		}
 		return save(filepath.Join(r.Out, "results", "commit-race-probes.json"), ps)
 	case "git":
-		_, err := r.GitFamily(ctx, rep, []string{"G1", "G2", "G3"})
+		muts := []string{"G1", "G2", "G3"}
+		if only != "" {
+			muts = []string{only}
+		}
+		_, err := r.GitFamily(ctx, rep, muts)
 		return err
 	case "http":
-		_, _, err := r.HTTPFamily(ctx, rep, []string{"H1", "H2"}, h1x)
+		muts := []string{"H1", "H2"}
+		if only != "" {
+			muts = []string{only}
+		}
+		_, _, err := r.HTTPFamily(ctx, rep, muts, h1x)
 		return err
 	case "decide":
 		return decide(r.Out)
