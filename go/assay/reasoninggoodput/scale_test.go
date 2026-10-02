@@ -1,9 +1,7 @@
 package reasoninggoodput
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 )
@@ -213,16 +211,7 @@ func TestScaleSweeps(t *testing.T) {
 			}, T)...)
 	}
 
-	raw, err := json.MarshalIndent(all, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll("testdata", 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile("testdata/scale.json", raw, 0o644); err != nil {
-		t.Fatal(err)
-	}
+	emitFixture(t, "scale.json", all)
 	// Structural gate: T4 must never execute MORE than T3 on any point
 	// (selective replay is a strict refinement of whole-task premise OCC).
 	byPoint := map[string]map[string]int64{}
