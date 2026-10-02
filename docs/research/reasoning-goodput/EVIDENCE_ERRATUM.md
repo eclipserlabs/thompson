@@ -224,5 +224,12 @@ validation and replay cost.
   frozen fixtures. Ordinary runs write to a temp dir and assert non-timing
   equality with the frozen fixture. Regeneration requires `-update`.
   `TestDecisionGates` now evaluates the committed fixture, so gate 6 **fails
-  deterministically**. That is the truthful state, and it is left failing on
-  purpose.
+  deterministically**. That is the truthful state.
+- Historical evidence check: `TestDecisionGates` is a **historical evidence
+  check, not an active product acceptance gate**. It evaluates the #36 gates
+  exactly as implemented against the committed fixture and asserts the
+  corrected recorded outcome: gates 1–5 and 7 PASS, implemented gate 6
+  FAIL. It fails if any gate's evaluation diverges from that record in
+  either direction, so a manufactured gate-6 PASS (for example, edited
+  timing values) is caught. Gate logic, thresholds and fixture values are
+  unchanged, and the prose gate is not reinterpreted.
