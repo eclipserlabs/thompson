@@ -255,6 +255,10 @@ pub fn router(registry: Arc<Registry>) -> Router {
 }
 
 #[cfg(test)]
+// `std::env::set_var` is safe on the pinned CI toolchain (Rust 1.75,
+// which denies `unused_unsafe`) but `unsafe` on newer edition-2024
+// toolchains. Allow the lint here so both accept these test blocks.
+#[allow(unused_unsafe)]
 mod tests {
     use super::*;
     use axum::http::StatusCode;

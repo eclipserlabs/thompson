@@ -32,10 +32,17 @@ var (
 )
 
 func nextPortBases() (pubBase, settleBase int) {
-	procBlock := int64(os.Getpid() % 32)
-	slot := e2ePortBase.Add(1) % 8
-	base := 22000 + procBlock*800 + slot*100
-	return int(base), int(base) + 50
+	// 16 PID blocks x 20 slots x 120 stride: the old 8-slot ring wrapped
+	// inside a single full-suite run (9+ boots), so a fresh boot could
+	// land on a port still draining from an earlier cluster and die at
+	// bind. 20 slots exceed any one run's boot count, so slots never
+	// wrap mid-run; the PID stride still separates concurrent test
+	// processes. Max base 61833 + settle/treatment offsets stays below
+	// 65535; settle sits 60 above public so treatment indexes never cross.
+	procBlock := int64(os.Getpid() % 16)
+	slot := e2ePortBase.Add(1) % 20
+	base := 22000 + procBlock*2500 + slot*120
+	return int(base), int(base) + 60
 }
 
 func TestMain(m *testing.M) {
