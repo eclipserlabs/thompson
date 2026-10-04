@@ -32,17 +32,23 @@ var (
 )
 
 func nextPortBases() (pubBase, settleBase int) {
-	// 16 PID blocks x 20 slots x 120 stride: the old 8-slot ring wrapped
-	// inside a single full-suite run (9+ boots), so a fresh boot could
-	// land on a port still draining from an earlier cluster and die at
-	// bind. 20 slots exceed any one run's boot count, so slots never
-	// wrap mid-run; the PID stride still separates concurrent test
-	// processes. Max base 61833 + settle/treatment offsets stays below
-	// 65535; settle sits 60 above public so treatment indexes never cross.
+	// 16 PID blocks x 20 slots x 30 stride, all below 32768. Two
+	// constraints shape this:
+	// - Slots must exceed a full run's boot count (9+): the old 8-slot
+	//   ring wrapped mid-run, reusing a port that could still be
+	//   draining and killing the fresh boot at bind.
+	// - Bases must stay out of Linux's ephemeral port range
+	//   (32768-60999): the suite dials thousands of localhost HTTP
+	//   calls, and a listener bind on a port lingering in TIME_WAIT
+	//   as a prior outbound connection fails with EADDRINUSE there
+	//   (client sockets lack SO_REUSEADDR). macOS never showed this:
+	//   different ephemeral range and shorter TIME_WAIT.
+	// Max base 32320 + treatment/settle offsets stays below 32768;
+	// the PID stride still separates concurrent test processes.
 	procBlock := int64(os.Getpid() % 16)
 	slot := e2ePortBase.Add(1) % 20
-	base := 22000 + procBlock*2500 + slot*120
-	return int(base), int(base) + 60
+	base := 22000 + procBlock*650 + slot*30
+	return int(base), int(base) + 8
 }
 
 func TestMain(m *testing.M) {
