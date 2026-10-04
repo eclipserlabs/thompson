@@ -17,7 +17,7 @@ func TestLedgerFromFileGroupsPaired(t *testing.T) {
 		OccurredAt: nowRFC3339Nano(), EligibleArmIDs: []string{"a", "b"}, SelectedArmID: "a",
 		SampledScores: map[string]float64{"a": 0.9, "b": 0.2}, PolicyConfigHash: "h",
 		PosteriorBefore: PosteriorSnapshot{Alpha: 1, Beta: 1, Pulls: 0},
-		ShadowEligible: true, ShadowSampled: true, ShadowArmID: strPtr("b"),
+		ShadowEligible:  true, ShadowSampled: true, ShadowArmID: strPtr("b"),
 	})
 	w.WriteExecutionObserved(ExecutionObserved{
 		SchemaVersion: 1, EventType: "ExecutionObserved", DecisionID: decID,
@@ -32,7 +32,7 @@ func TestLedgerFromFileGroupsPaired(t *testing.T) {
 		SchemaVersion: 1, EventType: "DecisionLearned", DecisionID: decID,
 		OccurredAt: nowRFC3339Nano(), ArmID: "a", ComputedReward: 0.9,
 		PosteriorBefore: PosteriorSnapshot{Alpha: 1, Beta: 1, Pulls: 0},
-		PosteriorAfter: PosteriorSnapshot{Alpha: 2, Beta: 1, Pulls: 1},
+		PosteriorAfter:  PosteriorSnapshot{Alpha: 2, Beta: 1, Pulls: 1},
 		TotalPullsAfter: 1,
 	})
 	w.Close()

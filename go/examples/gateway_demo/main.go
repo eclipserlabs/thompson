@@ -9,8 +9,8 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/wiramahendra/thompson-sampling/go/thompson"
 	"github.com/wiramahendra/thompson-sampling/go/gateway"
+	"github.com/wiramahendra/thompson-sampling/go/thompson"
 )
 
 func main() {
@@ -20,7 +20,7 @@ func main() {
 
 	// Map provider id -> upstream URL
 	upstreams := map[string]string{
-		"openai/gpt-4":             "https://api.openai.com",
+		"openai/gpt-4":            "https://api.openai.com",
 		"anthropic/claude-3-opus": "https://api.anthropic.com",
 	}
 

@@ -44,10 +44,10 @@ type ArmState struct {
 // Fields below Verified are gateway-fidelity additions (omitempty;
 // assay-only rows omit them and replay identically).
 type OutcomeAttempt struct {
-	AttemptID string   `json:"attempt_id"`
-	ArmID     string   `json:"arm_id"`
-	CostUSD   *float64 `json:"cost_usd,omitempty"`
-	Verified  string   `json:"verified"`
+	AttemptID        string            `json:"attempt_id"`
+	ArmID            string            `json:"arm_id"`
+	CostUSD          *float64          `json:"cost_usd,omitempty"`
+	Verified         string            `json:"verified"`
 	ExecutorID       string            `json:"executor_id,omitempty"`
 	Transport        string            `json:"transport,omitempty"`
 	LatencyMs        float64           `json:"latency_ms,omitempty"`

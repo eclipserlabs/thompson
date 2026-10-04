@@ -23,7 +23,7 @@ type ProviderOutcome struct {
 	// StatusCode is kept for debugging; not persisted as separate evidence field.
 	StatusCode int
 	// ResponseBody is not persisted to evidence (privacy); kept only for proxying to caller.
-	ResponseBody []byte
+	ResponseBody   []byte
 	ResponseHeader http.Header
 }
 

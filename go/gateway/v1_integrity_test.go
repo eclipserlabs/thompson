@@ -22,7 +22,7 @@ func TestPrimaryBodyPreservedWhenShadowBodyTooLarge(t *testing.T) {
 	// Router with small shadow limit 10 bytes
 	rt, _ := NewRouter(RouterConfig{
 		Policy: policy, Registry: reg, Writer: mem,
-		RNGFactory: func() *rand.Rand { return rand.New(rand.NewPCG(42, 42)) },
+		RNGFactory:        func() *rand.Rand { return rand.New(rand.NewPCG(42, 42)) },
 		ShadowEligibility: HeaderShadowEligibility{}, ShadowSampleRate: 1,
 		ShadowMaxBodyBytes: 10, ShadowTimeout: 200 * time.Millisecond, ShadowRNGSeed: 1,
 	})
@@ -80,7 +80,7 @@ func TestShadowDoesNotDelayPrimaryLearning(t *testing.T) {
 	reg2.Register(&slowProvider{id: "b", delay: 5 * time.Second})
 	rt, _ := NewRouter(RouterConfig{
 		Policy: policy2, Registry: reg2, Writer: mem2,
-		RNGFactory: func() *rand.Rand { return rand.New(rand.NewPCG(1, 1)) },
+		RNGFactory:        func() *rand.Rand { return rand.New(rand.NewPCG(1, 1)) },
 		ShadowEligibility: HeaderShadowEligibility{}, ShadowSampleRate: 1,
 		ShadowTimeout: 100 * time.Millisecond, ShadowRNGSeed: 1,
 	})
@@ -134,7 +134,7 @@ func TestPrimaryPosteriorIdenticalWithVaryingShadowRate(t *testing.T) {
 		rngFactory := func() *rand.Rand { return rand.New(rand.NewPCG(seed, seed)) }
 		rt, _ := NewRouter(RouterConfig{
 			Policy: policy, Registry: reg, Writer: mem,
-			RNGFactory: rngFactory,
+			RNGFactory:        rngFactory,
 			ShadowEligibility: HeaderShadowEligibility{}, ShadowSampleRate: rate, ShadowRNGSeed: 1,
 		})
 		req := httptest.NewRequest("POST", "/", nil)
@@ -196,7 +196,7 @@ func TestUniformShadowProbabilityPersisted(t *testing.T) {
 		}
 		rt, _ := NewRouter(RouterConfig{
 			Policy: policy, Registry: reg, Writer: mem,
-			RNGFactory: func() *rand.Rand { return rand.New(rand.NewPCG(1, 1)) },
+			RNGFactory:        func() *rand.Rand { return rand.New(rand.NewPCG(1, 1)) },
 			ShadowEligibility: HeaderShadowEligibility{}, ShadowSampleRate: 1, ShadowRNGSeed: 1,
 		})
 		req := httptest.NewRequest("POST", "/", nil)
@@ -236,7 +236,7 @@ func TestNoSampledScoreLabelledAsPropensity(t *testing.T) {
 	}
 	rt, _ := NewRouter(RouterConfig{
 		Policy: policy, Registry: reg, Writer: mem,
-		RNGFactory: func() *rand.Rand { return rand.New(rand.NewPCG(1, 1)) },
+		RNGFactory:        func() *rand.Rand { return rand.New(rand.NewPCG(1, 1)) },
 		ShadowEligibility: HeaderShadowEligibility{}, ShadowSampleRate: 1, ShadowRNGSeed: 1,
 	})
 	req := httptest.NewRequest("POST", "/", nil)
@@ -266,7 +266,7 @@ func TestOrderDecisionLearnedBeforeShadow(t *testing.T) {
 	}
 	rt, _ := NewRouter(RouterConfig{
 		Policy: policy, Registry: reg, Writer: mem,
-		RNGFactory: func() *rand.Rand { return rand.New(rand.NewPCG(1, 1)) },
+		RNGFactory:        func() *rand.Rand { return rand.New(rand.NewPCG(1, 1)) },
 		ShadowEligibility: HeaderShadowEligibility{}, ShadowSampleRate: 1, ShadowRNGSeed: 1,
 	})
 	req := httptest.NewRequest("POST", "/", nil)

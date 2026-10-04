@@ -50,22 +50,22 @@ type SelectionPolicy interface {
 // Router is the deployable routing path: Select -> persist -> Execute -> Reward -> Record -> persist (+ optional shadow).
 // Single SelectionPolicy instance per process (state_ownership requirement), guarded by policy's own mutex.
 type Router struct {
-	instanceID string
-	policy     SelectionPolicy
-	registry   *ProviderRegistry
-	writer     EvidenceWriter
-	decisions  DecisionStore
-	strategyID string
-	mode       RouterMode
-	outcomes   outcome.OutcomeStore
-	learner    *outcome.Learner
-	mapper     outcome.RewardMapper
-	costBook   *outcome.CostBookV1
-	observer   SettlementObserver
-	safety     *SafetyController
+	instanceID       string
+	policy           SelectionPolicy
+	registry         *ProviderRegistry
+	writer           EvidenceWriter
+	decisions        DecisionStore
+	strategyID       string
+	mode             RouterMode
+	outcomes         outcome.OutcomeStore
+	learner          *outcome.Learner
+	mapper           outcome.RewardMapper
+	costBook         *outcome.CostBookV1
+	observer         SettlementObserver
+	safety           *SafetyController
 	operatorAuthHook func(*http.Request) (string, bool)
-	settleAuth func(r *http.Request) bool
-	settleMu   sync.Mutex
+	settleAuth       func(r *http.Request) bool
+	settleMu         sync.Mutex
 	// persistIssue holds the Unix-nano timestamp of the last request-path
 	// persistence failure (decision commit, evidence write). HealthHandler
 	// reports degraded within a minute of it.
@@ -98,9 +98,9 @@ type RouterConfig struct {
 	// disables both behaviors (legacy-compatible). It authenticates nothing;
 	// it prevents cross-process test interference from EVER looking healthy.
 	InstanceID string
-	Policy   SelectionPolicy
-	Registry *ProviderRegistry
-	Writer   EvidenceWriter
+	Policy     SelectionPolicy
+	Registry   *ProviderRegistry
+	Writer     EvidenceWriter
 	// Decisions persists committed decisions before execution. Nil defaults
 	// to an in-memory store (legacy-compatible, non-durable).
 	Decisions DecisionStore
