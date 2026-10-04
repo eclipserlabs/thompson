@@ -1,5 +1,11 @@
 # Thompson
 
+Research and engineering artifacts for adaptive execution, verified outcomes, artifact reuse, and agent-state experiments.
+
+Current research status: the adaptive-routing and incremental-replay product theses were not supported by the experiments in this repository. The codebase remains useful as a collection of tested primitives and reproducible systems experiments. See [docs/research/STATUS.md](docs/research/STATUS.md) and the final [real-replay economics assay](docs/research/real-replay-economics/RESULTS.md). Terminal record: [docs/research/CLOSEOUT.md](docs/research/CLOSEOUT.md).
+
+**Adaptive execution decisions backed by verifiable outcomes.**
+
 [![Rust 1.75+](https://img.shields.io/badge/Rust-1.75%2B-dea584?logo=rust)](https://www.rust-lang.org/)
 [![Go 1.22+](https://img.shields.io/badge/Go-1.22%2B-00ADD8?logo=go)](https://go.dev/)
 [![Protocol v1](https://img.shields.io/badge/wire%20protocol-v1-5b5bd6)](protocol/SPEC.md)
@@ -160,17 +166,22 @@ See:
 - [Verified-mode operations](docs/engineering/PR3A_OPERATIONS.md)
 - [Experiment specification](docs/engineering/PR3B_EXPERIMENT_SPEC.md)
 
-## Next milestone
+## Research status
 
-The immediate engineering objective is a randomized experiment comparing:
+This is an engineering and research repository, not a validated
+production routing product. The experiments in
+[docs/research/STATUS.md](docs/research/STATUS.md) did not support the
+adaptive-routing or incremental-replay product theses: no rankable
+adaptive-over-static win was demonstrated, and the final assay killed
+selective replay as an economically justified mechanism. No production
+savings are claimed, and nothing here implies that adaptive routing,
+selective replay, or Guard has been commercially validated.
 
-1. An application's existing fixed execution policy.
-2. A quality-qualified static strategy.
-3. Thompson's adaptive policy.
-
-The intended business metric is fully loaded cost per verified successful job at an agreed quality threshold, accounting for retries, validation, human review, and unresolved outcomes where measurable.
-
-The current learner optimizes accepted/rejected outcomes, not cost directly. The experiment must establish whether the implemented system offers an economic improvement; that improvement is not assumed.
+What remains: tested primitives (policy libraries, verified-mode
+settlement, outcome ledger, offline evaluation tooling) and
+reproducible experiment records. Per-component standing is inventoried
+in [docs/research/COMPONENT_STATUS.md](docs/research/COMPONENT_STATUS.md).
+No further product thesis is currently authorized.
 
 ## Repository
 
