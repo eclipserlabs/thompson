@@ -102,6 +102,12 @@ func TestSupervisedIntegrityUnderIntervention(t *testing.T) {
 				fmt.Sprintf("http://127.0.0.1:%d/v1/operator/suspend", settleBase+3),
 				"cheap", "integrity: deterioration watch", opToken, "e2e-op")
 			if err != nil || code != 200 {
+				// The suspend target may be dead because phase 1 already
+				// exited with the underlying error. Stop it so the
+				// phase-1 tail logged above is final, then fail with
+				// that evidence attached instead of a bare refusal.
+				_ = cmd.Process.Kill()
+				<-done
 				t.Fatalf("suspend: %v code=%d", err, code)
 			}
 			suspended = true

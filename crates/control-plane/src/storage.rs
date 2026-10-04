@@ -82,7 +82,7 @@ impl RegistryStorage for FileStorage {
         for tenant in registry.list() {
             if let Some(snap) = registry.get(&tenant) {
                 let path = self.dir.join(format!("{tenant}.json"));
-                let store = thompson_sampling::FileStore::new(&path);
+                let store = thompson_sampling::FileStore::new(path);
                 thompson_sampling::SnapshotStore::save(&store, &snap).map_err(|e| e.to_string())?;
             }
         }
@@ -91,7 +91,7 @@ impl RegistryStorage for FileStorage {
 
     fn load(&self, tenant: &str) -> Result<Option<Snapshot>, String> {
         let path = self.dir.join(format!("{tenant}.json"));
-        let store = thompson_sampling::FileStore::new(&path);
+        let store = thompson_sampling::FileStore::new(path);
         thompson_sampling::SnapshotStore::load(&store).map_err(|e| e.to_string())
     }
 }
