@@ -52,10 +52,13 @@ These words mean different things in this file:
    added cost without eliminating operations; replanning value confined
    to shape changes. Not a product direction.
 5. **Verify-resolution / artifact resolver** — covered under decision 2:
-   technical primitive only, explicitly not a product thesis. The closest
-   shipped machinery is verified-mode settlement in `go/gateway`
-   (`settle.go`, `evidence.go`) plus `go/outcome`, which learns only from
-   settled, independently verified outcomes.
+   technical primitive only, explicitly not a product thesis. The
+   primitive itself now lives in the product tree at
+   `go/artifactresolver/` (salvaged from the stranded
+   `feat/artifact-resolver-v1` branch during the substrate cleanup).
+   The closest gateway-integrated machinery is verified-mode settlement
+   in `go/gateway` (`settle.go`, `evidence.go`) plus `go/outcome`, which
+   learns only from settled, independently verified outcomes.
 6. **Outcome ledger** — covered under decision 2: KILLED as a product
    (incumbent + warehouse reconstructs). The ledger implementation in
    `go/outcome` remains a useful primitive.

@@ -10,6 +10,15 @@ by this file. Passing tests do not make a component a product; see
 Tested components that remain genuinely reusable as libraries or tools.
 None is a product thesis.
 
+- **Artifact resolver** (`go/artifactresolver/`,
+  `docs/artifactresolver/`) — salvaged from the stranded
+  `feat/artifact-resolver-v1` branch into the product tree: split-identity
+  (ComputationKey vs VerificationKey) artifact resolution with
+  deterministic REUSE|VERIFY|RECOMPUTE|UNKNOWN verdicts, append-only
+  verification claims, idempotent revocation, stdlib-only. Frozen parity
+  fixture proves zero semantic discrepancies vs the assay it was
+  extracted from. Explicitly a technical primitive, not a product thesis.
+
 - **Rust Thompson Sampling policy** (`crates/thompson-sampling/`) —
   Beta-Bernoulli bandit core with pluggable samplers, warm-start priors,
   snapshot persistence; protocol conformance + stress tests. The
@@ -44,30 +53,18 @@ None is a product thesis.
 Complete experiments. Keep for reproducibility; do not build on as
 products.
 
-- **Reasoning-goodput assay** (`go/assay/reasoninggoodput/`,
-  `docs/research/reasoning-goodput/`) — synthetic-work selective-replay
-  harness with broad tests. Credibility damaged as recorded: implemented
-  gate 6 fails deterministically on the committed fixture
-  (`EVIDENCE_ERRATUM.md`); `TestDecisionGates` now asserts the truthful
-  historical record (gates 1–5, 7 PASS, gate 6 FAIL). Evidence, not code
-  to reuse.
-- **Live-agent-premise assay** (`go/assay/reasoninggoodput/livepilot/`,
-  `docs/research/live-agent-premise/`) — live-stream premise capture and
-  counterfactual preservation analysis. Frozen gates held as frozen, but
-  classified INSUFFICIENT_EVIDENCE for economics (counterfactual, not
-  actual replay; preservation mostly initial prefill; premises not
-  re-derivable from the repo). Its `NEXT_REASONING_TRANSACTION.md` design
-  is superseded by the real-replay KILL.
-- **Real-replay economics assay** (`go/assay/realreplay/`,
-  `docs/research/real-replay-economics/`) — the terminal experiment.
-  Harness tests pass; verdict `KILL_INCREMENTAL_REPLAY_ECONOMICS`.
-  Preserve untouched for reproducibility.
-- **Journal prototype** (`go/assay/journal/`,
-  `docs/research/journal/`) — SQLite-WAL single-log prototype with
-  lifecycle, matched-comparison, and fault tests. Verdict was CONTINUE
-  INVESTIGATION toward a gateway pilot, which this closeout does not
-  authorize. Research code; explicitly never touches the production
-  gateway. Compaction unimplemented (documented).
+- **Reasoning-goodput, live-agent-premise, and real-replay assays**
+  (REMOVED from the working tree with `go/assay` in the substrate
+  cleanup; verdict memos retained under `docs/research/`, full evidence
+  in git history) — see `STATUS.md` decisions 7–9 and `ARCHIVE_NOTE.md`.
+- **Journal prototype** (REMOVED from the working tree with `go/assay`
+  in the substrate cleanup; record preserved in git history) — SQLite-WAL
+  single-log prototype with lifecycle, matched-comparison, and fault
+  tests. Verdict was CONTINUE INVESTIGATION toward a gateway pilot, which
+  was never authorized. The experimental `JOURNAL_PATH` SQLite backend was
+  de-wired from `go/router` and journal-authority support removed from
+  `go/cmd/exp-run` (unknown `StorageBackend` now fails closed). Compaction
+  was unimplemented (documented).
 
 ## LEGACY
 
@@ -82,11 +79,13 @@ present and tested. Do not extend.
 
 ## BROKEN/UNVERIFIED
 
-- **Artifact resolver / verified-artifact machinery as a named
-  component: ABSENT.** No file or type named artifact/resolver exists in
-  `go/` or `crates/` (only generic "experiment artifact" vocabulary in
-  comments). Do not cite it as shipped code. The closest real machinery
-  is verified-mode settlement (`go/gateway/settle.go`, `evidence.go`,
+- **Artifact resolver / verified-artifact machinery: PRESENT as a
+  primitive.** `go/artifactresolver/` (split-identity resolution,
+  append-only claims, frozen parity fixture; tests pass) with contracts
+  under `docs/artifactresolver/`. Salvaged into the product tree from
+  the stranded `feat/artifact-resolver-v1` branch during the substrate
+  cleanup. The closest *gateway-integrated* machinery remains
+  verified-mode settlement (`go/gateway/settle.go`, `evidence.go`,
   `go/outcome/`), classified ACTIVE_PRIMITIVE above.
 - **Pre-existing hygiene failures (repository, not components):**
   `gofmt -l` flags 18 files outside `go/assay/realreplay/` (pre-existing
