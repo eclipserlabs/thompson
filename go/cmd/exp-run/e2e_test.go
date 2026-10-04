@@ -133,9 +133,13 @@ func TestE2EPublicCannotSettle(t *testing.T) {
 	if resp2.StatusCode != http.StatusConflict {
 		t.Fatalf("unaddressed settle=%d want 409", resp2.StatusCode)
 	}
-	// Addressed but unauthenticated: 401 as before.
-	req.Header.Set("X-Expect-Instance", g.instanceID)
-	resp3, err := client.Do(req)
+	// Addressed but unauthenticated: 401 as before. A fresh request: the
+	// addressed 409 check above consumed req's body, and reusing a request
+	// with a spent body is rejected (ContentLength/body mismatch) on some
+	// Go versions.
+	req3, _ := http.NewRequest(http.MethodPost, g.SettleURL+"/v1/outcomes", strings.NewReader(`{}`))
+	req3.Header.Set("X-Expect-Instance", g.instanceID)
+	resp3, err := client.Do(req3)
 	if err != nil {
 		t.Fatal(err)
 	}
