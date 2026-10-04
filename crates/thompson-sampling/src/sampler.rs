@@ -559,7 +559,7 @@ mod tests {
         let samplers: Vec<Box<dyn BetaSampler>> = vec![
             Box::new(Exact),
             Box::new(MeanPlusGaussian),
-            Box::new(MeanPlusUniform::default()),
+            Box::<MeanPlusUniform>::default(),
             Box::new(Deterministic),
             Box::new(MiscodedGamma),
             Box::new(ConcentrationSwitched::production_default()),

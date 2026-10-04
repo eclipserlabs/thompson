@@ -186,21 +186,16 @@ func readAssignmentRows(path string) ([]string, error) {
 	return out, sc.Err()
 }
 
-// journalPathFor resolves the experimental storage backend: empty keeps
-// JSONL; "journal" selects the SQLite journal file. Anything else, or a
-// journal flag on a non-cost-aware treatment, fails closed here (never in
-// the child, where a misconfigured binary could half-start).
-func journalPathFor(t TreatmentConfig, dir string) string {
+// storageBackendFor validates the treatment's durable backend. Only the
+// default JSONL file ledgers remain: the experimental SQLite journal was
+// removed with go/assay, so any StorageBackend value now fails closed here
+// (never in the child, where a misconfigured binary could half-start).
+func storageBackendFor(t TreatmentConfig) error {
 	switch t.StorageBackend {
 	case "":
-		return ""
-	case "journal":
-		if !t.CostAware {
-			return "JOURNAL-BACKEND-REQUIRES-COSTAWARE"
-		}
-		return dir + "/journal.db"
+		return nil
 	default:
-		return "JOURNAL-BACKEND-UNKNOWN:" + t.StorageBackend
+		return fmt.Errorf("exp-run: treatment %s requests removed storage backend %q (only JSONL file ledgers remain)", t.ID, t.StorageBackend)
 	}
 }
 
@@ -233,12 +228,16 @@ func (r *Runner) Boot() error {
 				r.Shutdown()
 				return err
 			}
+			if err := storageBackendFor(t); err != nil {
+				r.Shutdown()
+				return err
+			}
 			g, err = SpawnCostAwareGateway(r.cfg.RouterBin, t.ID, dir,
 				"127.0.0.1:"+itoa(r.cfg.PubPorts[i]),
 				"127.0.0.1:"+itoa(r.cfg.SettlePorts[i]),
 				r.cfg.Token, arms, t.ID, selSeed,
 				scPath, dir+"/safety.jsonl", r.cfg.OperatorToken,
-				journalPathFor(t, dir), r.cfg.Timeout)
+				r.cfg.Timeout)
 		} else {
 			g, err = SpawnGateway(r.cfg.RouterBin, t.ID, dir,
 				"127.0.0.1:"+itoa(r.cfg.PubPorts[i]),

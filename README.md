@@ -191,10 +191,10 @@ No further product thesis is currently authorized.
 - `go/thompson` — Go policy and decision snapshots
 - `go/gateway` — HTTP routing, durable decisions, verified settlement, and evidence
 - `go/outcome` — Versioned outcomes, durable learning, and recovery
+- `go/artifactresolver` — Split-identity artifact resolution primitive (REUSE|VERIFY|RECOMPUTE|UNKNOWN)
 - `go/cmd` — Evidence analysis and evaluation utilities
 - `protocol` — Rust/Go snapshot interoperability
-- `docs` — Research findings, design contracts, operational documentation, and experiment specifications
-- `helm` — Experimental deployment charts
+- `docs` — Contracts, operations, evaluation reports, and a slim research archive (`docs/research/STATUS.md`, `CLOSEOUT.md`, verdict memos)
 
 ## License
 

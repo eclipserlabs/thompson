@@ -27,7 +27,7 @@ impl PolicyObserver for CountingObserver {
 fn concurrent_select_record_with_observer() {
     let policy = Arc::new(Mutex::new(
         ThompsonSampling::with_defaults(["a", "b", "c"])
-            .with_observer(Box::new(CountingObserver::default())),
+            .with_observer(Box::<CountingObserver>::default()),
     ));
     let mut handles = Vec::new();
     for seed in 0..8 {

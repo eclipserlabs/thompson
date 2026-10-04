@@ -72,8 +72,27 @@ func TestSupervisedIntegrityUnderIntervention(t *testing.T) {
 		t.Logf("phase1 output tail: %s", tailLines(string(out), 3))
 	}()
 	// Suspend cheap once 18 jobs complete (deterioration third active).
+	// Readiness first: on slow machines the lighter treatments can finish
+	// 18 jobs before the cost-aware gateway binds its listener, and
+	// suspending an unbooted gateway fails closed. Wait for t3 health
+	// (same deadline); a crashed gateway still fails here, with a clear
+	// message instead of a refused suspend.
 	suspended := false
 	deadline := time.Now().Add(5 * time.Minute)
+	t3health := fmt.Sprintf("http://127.0.0.1:%d/health", pubBase+3)
+	for {
+		resp, err := http.Get(t3health)
+		if err == nil {
+			resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				break
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("t3 gateway never became healthy")
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
 	for !suspended && time.Now().Before(deadline) {
 		time.Sleep(500 * time.Millisecond)
 		n := countTerminalOrProgress(dir)
@@ -83,6 +102,12 @@ func TestSupervisedIntegrityUnderIntervention(t *testing.T) {
 				fmt.Sprintf("http://127.0.0.1:%d/v1/operator/suspend", settleBase+3),
 				"cheap", "integrity: deterioration watch", opToken, "e2e-op")
 			if err != nil || code != 200 {
+				// The suspend target may be dead because phase 1 already
+				// exited with the underlying error. Stop it so the
+				// phase-1 tail logged above is final, then fail with
+				// that evidence attached instead of a bare refusal.
+				_ = cmd.Process.Kill()
+				<-done
 				t.Fatalf("suspend: %v code=%d", err, code)
 			}
 			suspended = true

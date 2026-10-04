@@ -32,10 +32,23 @@ var (
 )
 
 func nextPortBases() (pubBase, settleBase int) {
-	procBlock := int64(os.Getpid() % 32)
-	slot := e2ePortBase.Add(1) % 8
-	base := 22000 + procBlock*800 + slot*100
-	return int(base), int(base) + 50
+	// 16 PID blocks x 20 slots x 30 stride, all below 32768. Two
+	// constraints shape this:
+	// - Slots must exceed a full run's boot count (9+): the old 8-slot
+	//   ring wrapped mid-run, reusing a port that could still be
+	//   draining and killing the fresh boot at bind.
+	// - Bases must stay out of Linux's ephemeral port range
+	//   (32768-60999): the suite dials thousands of localhost HTTP
+	//   calls, and a listener bind on a port lingering in TIME_WAIT
+	//   as a prior outbound connection fails with EADDRINUSE there
+	//   (client sockets lack SO_REUSEADDR). macOS never showed this:
+	//   different ephemeral range and shorter TIME_WAIT.
+	// Max base 32320 + treatment/settle offsets stays below 32768;
+	// the PID stride still separates concurrent test processes.
+	procBlock := int64(os.Getpid() % 16)
+	slot := e2ePortBase.Add(1) % 20
+	base := 22000 + procBlock*650 + slot*30
+	return int(base), int(base) + 8
 }
 
 func TestMain(m *testing.M) {
@@ -133,9 +146,13 @@ func TestE2EPublicCannotSettle(t *testing.T) {
 	if resp2.StatusCode != http.StatusConflict {
 		t.Fatalf("unaddressed settle=%d want 409", resp2.StatusCode)
 	}
-	// Addressed but unauthenticated: 401 as before.
-	req.Header.Set("X-Expect-Instance", g.instanceID)
-	resp3, err := client.Do(req)
+	// Addressed but unauthenticated: 401 as before. A fresh request: the
+	// addressed 409 check above consumed req's body, and reusing a request
+	// with a spent body is rejected (ContentLength/body mismatch) on some
+	// Go versions.
+	req3, _ := http.NewRequest(http.MethodPost, g.SettleURL+"/v1/outcomes", strings.NewReader(`{}`))
+	req3.Header.Set("X-Expect-Instance", g.instanceID)
+	resp3, err := client.Do(req3)
 	if err != nil {
 		t.Fatal(err)
 	}
