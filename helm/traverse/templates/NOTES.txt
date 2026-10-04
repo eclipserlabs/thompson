@@ -1,4 +1,0 @@
-Traverse deployed as {{ include "traverse.fullname" . }}
-  Service: {{ include "traverse.fullname" . }}:{{ .Values.service.port }}
-  Health: http://{{ include "traverse.fullname" . }}:{{ .Values.service.port }}/health
-  Snapshots: http://{{ include "traverse.fullname" . }}:{{ .Values.service.port }}/snapshots
