@@ -49,7 +49,7 @@ type EligibleArmState struct {
 // V0 OPE adds eligible_arm_state for propensity reconstruction.
 type DecisionStarted struct {
 	SchemaVersion    int                `json:"schema_version"`
-	EventType        string             `json:"event_type"` // "DecisionStarted"
+	EventType        string             `json:"event_type"`  // "DecisionStarted"
 	DecisionID       string             `json:"decision_id"` // canonical internal ID
 	OccurredAt       string             `json:"occurred_at"` // RFC3339Nano
 	EligibleArmIDs   []string           `json:"eligible_arm_ids"`
@@ -59,7 +59,7 @@ type DecisionStarted struct {
 	PosteriorBefore  PosteriorSnapshot  `json:"posterior_before"`
 	EligibleArmState []EligibleArmState `json:"eligible_arm_state,omitempty"`
 	// Bandit log record fields for OPE
-	LoggingPolicyID       string `json:"logging_policy_id,omitempty"`
+	LoggingPolicyID         string `json:"logging_policy_id,omitempty"`
 	LoggingPolicyConfigHash string `json:"logging_policy_config_hash,omitempty"`
 	// CostAware carries the validated cost-aware result (nil cost-blind).
 	CostAware *thompson.CostAwareResult `json:"cost_aware,omitempty"`
@@ -77,72 +77,72 @@ type DecisionStarted struct {
 // Token/cost fields are nullable pointers — nil encodes JSON null / absence.
 // Never synthesize a constant cost when unavailable.
 type ExecutionObserved struct {
-	SchemaVersion int     `json:"schema_version"`
-	EventType     string  `json:"event_type"` // "ExecutionObserved"
-	DecisionID    string  `json:"decision_id"`
-	OccurredAt    string  `json:"occurred_at"`
-	ArmID         string  `json:"arm_id"`
-	LatencyMs     float64 `json:"latency_ms"`
-	Success       bool    `json:"success"`
-	InputTokens   *int    `json:"input_tokens"`  // nil -> null
-	OutputTokens  *int    `json:"output_tokens"` // nil -> null
-	CostUSD       *float64 `json:"cost_usd"`     // nil -> null
+	SchemaVersion int      `json:"schema_version"`
+	EventType     string   `json:"event_type"` // "ExecutionObserved"
+	DecisionID    string   `json:"decision_id"`
+	OccurredAt    string   `json:"occurred_at"`
+	ArmID         string   `json:"arm_id"`
+	LatencyMs     float64  `json:"latency_ms"`
+	Success       bool     `json:"success"`
+	InputTokens   *int     `json:"input_tokens"`  // nil -> null
+	OutputTokens  *int     `json:"output_tokens"` // nil -> null
+	CostUSD       *float64 `json:"cost_usd"`      // nil -> null
 }
 
 // DecisionLearned persisted AFTER RecordOutcome.
 // Shows reward and posterior transition.
 type DecisionLearned struct {
-	SchemaVersion    int               `json:"schema_version"`
-	EventType        string            `json:"event_type"` // "DecisionLearned"
-	DecisionID       string            `json:"decision_id"`
-	OccurredAt       string            `json:"occurred_at"`
-	ArmID            string            `json:"arm_id"`
-	ComputedReward   float64           `json:"computed_reward"`
-	PosteriorBefore  PosteriorSnapshot `json:"posterior_before"`
-	PosteriorAfter   PosteriorSnapshot `json:"posterior_after"`
-	TotalPullsAfter  uint64            `json:"total_pulls_after"`
+	SchemaVersion   int               `json:"schema_version"`
+	EventType       string            `json:"event_type"` // "DecisionLearned"
+	DecisionID      string            `json:"decision_id"`
+	OccurredAt      string            `json:"occurred_at"`
+	ArmID           string            `json:"arm_id"`
+	ComputedReward  float64           `json:"computed_reward"`
+	PosteriorBefore PosteriorSnapshot `json:"posterior_before"`
+	PosteriorAfter  PosteriorSnapshot `json:"posterior_after"`
+	TotalPullsAfter uint64            `json:"total_pulls_after"`
 }
 
 // ShadowExecutionObserved is counterfactual evidence: outcome of a single
 // non-selected arm on the same logical workload. Never mutates live policy.
 type ShadowExecutionObserved struct {
-	SchemaVersion int     `json:"schema_version"`
-	EventType     string  `json:"event_type"` // "ShadowExecutionObserved"
-	DecisionID    string  `json:"decision_id"` // joins to primary
-	OccurredAt    string  `json:"occurred_at"`
-	ArmID         string  `json:"arm_id"`
-	PrimaryArmID  string  `json:"primary_arm_id"`
-	LatencyMs     float64 `json:"latency_ms"`
-	Success       bool    `json:"success"`
-	InputTokens   *int    `json:"input_tokens"`
-	OutputTokens  *int    `json:"output_tokens"`
-	CostUSD       *float64 `json:"cost_usd"`
-	ComputedReward float64 `json:"computed_reward"` // RewardPolicy reward, evidence only
+	SchemaVersion  int      `json:"schema_version"`
+	EventType      string   `json:"event_type"`  // "ShadowExecutionObserved"
+	DecisionID     string   `json:"decision_id"` // joins to primary
+	OccurredAt     string   `json:"occurred_at"`
+	ArmID          string   `json:"arm_id"`
+	PrimaryArmID   string   `json:"primary_arm_id"`
+	LatencyMs      float64  `json:"latency_ms"`
+	Success        bool     `json:"success"`
+	InputTokens    *int     `json:"input_tokens"`
+	OutputTokens   *int     `json:"output_tokens"`
+	CostUSD        *float64 `json:"cost_usd"`
+	ComputedReward float64  `json:"computed_reward"` // RewardPolicy reward, evidence only
 	// V1 behavior-policy logging for offline evaluation
-	PrimaryLoggingPolicyID       string  `json:"primary_logging_policy_id"`
-	PrimaryLoggingPolicyConfigHash string `json:"primary_logging_policy_config_hash"`
-	ShadowSelectionPolicyID      string  `json:"shadow_selection_policy_id"`
-	ShadowSelectionProbability   float64 `json:"shadow_selection_probability"`
-	EligibleArmCount             int     `json:"eligible_arm_count"`
-	ShadowCandidateCount         int     `json:"shadow_candidate_count"`
+	PrimaryLoggingPolicyID         string  `json:"primary_logging_policy_id"`
+	PrimaryLoggingPolicyConfigHash string  `json:"primary_logging_policy_config_hash"`
+	ShadowSelectionPolicyID        string  `json:"shadow_selection_policy_id"`
+	ShadowSelectionProbability     float64 `json:"shadow_selection_probability"`
+	EligibleArmCount               int     `json:"eligible_arm_count"`
+	ShadowCandidateCount           int     `json:"shadow_candidate_count"`
 }
 
 // ShadowSkipped is emitted when a shadow was intended but suppressed for a
 // machine-readable reason. It is the V1 fix for stale shadow_sampled evidence.
 type ShadowSkipped struct {
-	SchemaVersion          int     `json:"schema_version"`
-	EventType              string  `json:"event_type"` // "ShadowSkipped"
-	DecisionID             string  `json:"decision_id"`
-	OccurredAt             string  `json:"occurred_at"`
-	IntendedShadowArmID    *string `json:"intended_shadow_arm_id,omitempty"`
-	Reason                 string  `json:"reason"` // enum below
+	SchemaVersion       int     `json:"schema_version"`
+	EventType           string  `json:"event_type"` // "ShadowSkipped"
+	DecisionID          string  `json:"decision_id"`
+	OccurredAt          string  `json:"occurred_at"`
+	IntendedShadowArmID *string `json:"intended_shadow_arm_id,omitempty"`
+	Reason              string  `json:"reason"` // enum below
 	// V1 behavior-policy logging (when available)
-	PrimaryLoggingPolicyID       string  `json:"primary_logging_policy_id,omitempty"`
-	PrimaryLoggingPolicyConfigHash string `json:"primary_logging_policy_config_hash,omitempty"`
-	ShadowSelectionPolicyID      string  `json:"shadow_selection_policy_id,omitempty"`
-	ShadowSelectionProbability   *float64 `json:"shadow_selection_probability,omitempty"`
-	EligibleArmCount             int     `json:"eligible_arm_count"`
-	ShadowCandidateCount         int     `json:"shadow_candidate_count"`
+	PrimaryLoggingPolicyID         string   `json:"primary_logging_policy_id,omitempty"`
+	PrimaryLoggingPolicyConfigHash string   `json:"primary_logging_policy_config_hash,omitempty"`
+	ShadowSelectionPolicyID        string   `json:"shadow_selection_policy_id,omitempty"`
+	ShadowSelectionProbability     *float64 `json:"shadow_selection_probability,omitempty"`
+	EligibleArmCount               int      `json:"eligible_arm_count"`
+	ShadowCandidateCount           int      `json:"shadow_candidate_count"`
 }
 
 // FileEvidenceWriter is a file-backed, append-only JSONL writer.

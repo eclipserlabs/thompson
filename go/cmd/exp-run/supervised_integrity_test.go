@@ -34,11 +34,11 @@ func TestSupervisedIntegrityUnderIntervention(t *testing.T) {
 	mkRunner := func() *Runner {
 		r, err := OpenRunner(RunnerConfig{
 			Manifest: m, Root: dir, RouterBin: routerBin(t),
-			PubPorts: []int{pubBase, pubBase + 1, pubBase + 2, pubBase + 3},
+			PubPorts:    []int{pubBase, pubBase + 1, pubBase + 2, pubBase + 3},
 			SettlePorts: []int{settleBase, settleBase + 1, settleBase + 2, settleBase + 3},
-			Token: "e2e-token",
-			Timeout: 20 * time.Second,
-			T0Clock: time.Date(2026, 1, 5, 0, 0, 0, 0, time.UTC), Step: 60 * time.Second,
+			Token:       "e2e-token",
+			Timeout:     20 * time.Second,
+			T0Clock:     time.Date(2026, 1, 5, 0, 0, 0, 0, time.UTC), Step: 60 * time.Second,
 			SelectionSeed: 31337, SafetyConfigs: map[string][]byte{"t3": scb}, OperatorToken: opToken,
 		})
 		if err != nil {
@@ -269,4 +269,3 @@ func tailLines(s string, n int) string {
 	}
 	return strings.Join(ls[len(ls)-n:], "\n")
 }
-

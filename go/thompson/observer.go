@@ -17,6 +17,6 @@ type Observer interface {
 type NoopObserver struct{}
 
 func (NoopObserver) OnSelect(string, map[string]float64) {}
-func (NoopObserver) OnRecord(string, float64, Posterior)  {}
-func (NoopObserver) OnArmAdded(string, bool)              {}
-func (NoopObserver) OnDiscount(float64)                   {}
+func (NoopObserver) OnRecord(string, float64, Posterior) {}
+func (NoopObserver) OnArmAdded(string, bool)             {}
+func (NoopObserver) OnDiscount(float64)                  {}

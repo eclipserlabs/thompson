@@ -23,7 +23,7 @@ import (
 type Middleware struct {
 	Policy       *thompson.Policy
 	Forward      func(provider string, w http.ResponseWriter, r *http.Request) (thompson.Outcome, error)
-	Breaker      *thompson.CircuitBreaker // per-tenant health, nil disables
+	Breaker      *thompson.CircuitBreaker   // per-tenant health, nil disables
 	RateLimiter  func(r *http.Request) bool // true = allow, false = 429
 	AuthRequired func(r *http.Request) bool // true = authorized
 	MaxRetries   int

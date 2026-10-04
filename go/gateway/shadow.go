@@ -129,8 +129,8 @@ type ShadowConfig struct {
 
 // shadowState holds mutable shadow configuration with atomic kill switch.
 type shadowState struct {
-	mu     sync.RWMutex
-	config ShadowConfig
+	mu      sync.RWMutex
+	config  ShadowConfig
 	sampler *shadowSampler
 	budget  *ShadowBudget
 	// shadowRNG for arm selection, isolated from primary
@@ -186,9 +186,9 @@ func (s *shadowState) getBudget() *ShadowBudget {
 
 // shadowMetrics holds aggregate counters for observability (not policy punishment).
 type shadowMetrics struct {
-	attempted atomic.Uint64
-	sampled   atomic.Uint64
-	executed  atomic.Uint64
-	timeout   atomic.Uint64
+	attempted   atomic.Uint64
+	sampled     atomic.Uint64
+	executed    atomic.Uint64
+	timeout     atomic.Uint64
 	rateLimited atomic.Uint64
 }

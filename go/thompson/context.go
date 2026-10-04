@@ -22,10 +22,10 @@ func (NoContext) PartitionKey() string { return "default" }
 
 // PartitionedPolicy is N independent Policies keyed by Context.
 type PartitionedPolicy struct {
-	mu              sync.Mutex
-	partitions      map[string]*Policy
-	config          Config
-	samplerFactory  func() Sampler
+	mu             sync.Mutex
+	partitions     map[string]*Policy
+	config         Config
+	samplerFactory func() Sampler
 }
 
 // NewPartitionedPolicy creates a partitioned policy with sampler factory per partition.

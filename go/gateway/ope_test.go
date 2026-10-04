@@ -20,7 +20,7 @@ func TestEligibleArmStatePersisted(t *testing.T) {
 	}
 	rt, _ := NewRouter(RouterConfig{
 		Policy: policy, Registry: reg, Writer: mem,
-		RNGFactory: func() *rand.Rand { return rand.New(rand.NewPCG(1, 1)) },
+		RNGFactory:        func() *rand.Rand { return rand.New(rand.NewPCG(1, 1)) },
 		ShadowEligibility: HeaderShadowEligibility{}, ShadowSampleRate: 0,
 	})
 	req := httptest.NewRequest("POST", "/", strings.NewReader(`{}`))
@@ -42,7 +42,7 @@ func TestHistoricalWithoutStateIsOPEIneligible(t *testing.T) {
 		Started: &DecisionStarted{
 			DecisionID: "old", EligibleArmIDs: []string{"a", "b"}, SelectedArmID: "a",
 			EligibleArmState: nil,
-			LoggingPolicyID: "exact-thompson-v1", LoggingPolicyConfigHash: "h",
+			LoggingPolicyID:  "exact-thompson-v1", LoggingPolicyConfigHash: "h",
 		},
 		Primary: &ExecutionObserved{DecisionID: "old", ArmID: "a"},
 		Learned: &DecisionLearned{DecisionID: "old", ArmID: "a", ComputedReward: 0.5},
@@ -279,7 +279,7 @@ func TestSelfEvaluationThompson(t *testing.T) {
 		tmpWriter.WriteDecisionStarted(DecisionStarted{
 			SchemaVersion: 1, EventType: "DecisionStarted", DecisionID: t.Name() + "-" + string(rune(i)),
 			EligibleArmIDs: eligible, SelectedArmID: chosen, SampledScores: scores, PolicyConfigHash: hash,
-			PosteriorBefore: PosteriorSnapshot{Alpha: postBefore.Alpha, Beta: postBefore.Beta, Pulls: postBefore.Pulls},
+			PosteriorBefore:  PosteriorSnapshot{Alpha: postBefore.Alpha, Beta: postBefore.Beta, Pulls: postBefore.Pulls},
 			EligibleArmState: eligibleState, LoggingPolicyID: "exact-thompson-v1", LoggingPolicyConfigHash: hash,
 		})
 		mean := means[chosen]
@@ -297,7 +297,7 @@ func TestSelfEvaluationThompson(t *testing.T) {
 			SchemaVersion: 1, EventType: "DecisionLearned", DecisionID: t.Name() + "-" + string(rune(i)),
 			ArmID: chosen, ComputedReward: reward,
 			PosteriorBefore: PosteriorSnapshot{Alpha: postBefore.Alpha, Beta: postBefore.Beta, Pulls: postBefore.Pulls},
-			PosteriorAfter: PosteriorSnapshot{Alpha: postAfter.Alpha, Beta: postAfter.Beta, Pulls: postAfter.Pulls},
+			PosteriorAfter:  PosteriorSnapshot{Alpha: postAfter.Alpha, Beta: postAfter.Beta, Pulls: postAfter.Pulls},
 			TotalPullsAfter: policy.TotalPulls(),
 		})
 	}
@@ -305,9 +305,9 @@ func TestSelfEvaluationThompson(t *testing.T) {
 	var decisions []*LedgerDecision
 	for i := 0; i < 500; i++ {
 		d := &LedgerDecision{
-			Started: &tmpWriter.Started[i],
-			Primary: &tmpWriter.Observed[i],
-			Learned: &tmpWriter.Learned[i],
+			Started:  &tmpWriter.Started[i],
+			Primary:  &tmpWriter.Observed[i],
+			Learned:  &tmpWriter.Learned[i],
 			Eligible: tmpWriter.Started[i].EligibleArmIDs,
 		}
 		decisions = append(decisions, d)

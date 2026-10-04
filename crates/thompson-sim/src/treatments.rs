@@ -48,7 +48,7 @@ pub fn sampler_group() -> Vec<Treatment> {
             Box::new(legacy::MeanPlusGaussian)
         }),
         treatment("sampler", "mean+uniform", baseline(), || {
-            Box::new(legacy::MeanPlusUniform::default())
+            Box::<legacy::MeanPlusUniform>::default()
         }),
         treatment("sampler", "concentration-switched", baseline(), || {
             Box::new(legacy::ConcentrationSwitched::production_default())
@@ -109,7 +109,7 @@ pub fn warm_start_approx_group() -> Vec<Treatment> {
                 // Rebuild with the same config but a deployed-style sampler.
                 let reference = (t.build)();
                 let config = *reference.config();
-                ThompsonSampling::new(config, Box::new(legacy::MeanPlusUniform::default()))
+                ThompsonSampling::new(config, Box::<legacy::MeanPlusUniform>::default())
             }),
         })
         .collect()

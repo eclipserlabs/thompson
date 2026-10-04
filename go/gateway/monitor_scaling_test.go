@@ -39,9 +39,9 @@ func TestMonitorScaling(t *testing.T) {
 					Validation: outcome.ValidationPass, Verified: ver, VerifiedBy: "m",
 				}},
 				DecidingAttemptID: jid + "-a0", VerifiedBy: "m",
-				OccurredAt:  "2026-01-05T00:00:00Z",
-				VerifiedAt:  "2026-01-05T01:00:00Z",
-				Seq:         uint64(i),
+				OccurredAt: "2026-01-05T00:00:00Z",
+				VerifiedAt: "2026-01-05T01:00:00Z",
+				Seq:        uint64(i),
 			})
 		}
 		start := time.Now()

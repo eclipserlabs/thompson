@@ -22,24 +22,24 @@ func newDeterministicRouter(policy *thompson.Policy, writer EvidenceWriter, reg 
 	// deterministic seed for both primary and shadow (isolated)
 	seed := uint64(42)
 	rt, _ := NewRouter(RouterConfig{
-		Policy:                 policy,
-		Registry:               reg,
-		Writer:                 writer,
-		RNGFactory:             func() *rand.Rand { return rand.New(rand.NewPCG(seed, seed>>1)) },
-		ShadowEligibility:      eligibility,
-		ShadowSampleRate:       rate,
-		ShadowTimeout:          200 * time.Millisecond,
-		ShadowMaxConcurrency:   5,
-		ShadowRNGSeed:          999,
-		ShadowMaxBodyBytes:     MaxBodyBytes,
+		Policy:               policy,
+		Registry:             reg,
+		Writer:               writer,
+		RNGFactory:           func() *rand.Rand { return rand.New(rand.NewPCG(seed, seed>>1)) },
+		ShadowEligibility:    eligibility,
+		ShadowSampleRate:     rate,
+		ShadowTimeout:        200 * time.Millisecond,
+		ShadowMaxConcurrency: 5,
+		ShadowRNGSeed:        999,
+		ShadowMaxBodyBytes:   MaxBodyBytes,
 	})
 	return rt
 }
 
 type countingProvider struct {
-	id    string
-	calls atomic.Uint64
-	body  string
+	id     string
+	calls  atomic.Uint64
+	body   string
 	status int
 }
 
@@ -258,6 +258,7 @@ func TestShadowFailureDoesNotAlterPosterior(t *testing.T) {
 }
 
 type failingProvider struct{ id string }
+
 func (f *failingProvider) ID() string { return f.id }
 func (f *failingProvider) Invoke(ctx context.Context, r *http.Request) (ProviderOutcome, error) {
 	return ProviderOutcome{Success: false, StatusCode: 500}, nil
@@ -278,12 +279,12 @@ func TestShadowTimeoutEmitsEvidence(t *testing.T) {
 	// Use router with short shadow timeout
 	rt, _ := NewRouter(RouterConfig{
 		Policy: policy, Registry: reg, Writer: mem,
-		RNGFactory: func() *rand.Rand { return rand.New(rand.NewPCG(1, 1)) },
-		ShadowEligibility: HeaderShadowEligibility{},
-		ShadowSampleRate: 1,
-		ShadowTimeout: 50 * time.Millisecond,
+		RNGFactory:           func() *rand.Rand { return rand.New(rand.NewPCG(1, 1)) },
+		ShadowEligibility:    HeaderShadowEligibility{},
+		ShadowSampleRate:     1,
+		ShadowTimeout:        50 * time.Millisecond,
 		ShadowMaxConcurrency: 5,
-		ShadowRNGSeed: 1,
+		ShadowRNGSeed:        1,
 	})
 	req := httptest.NewRequest("POST", "/", nil)
 	req.Header.Set("X-Shadow-Eligible", "true")
@@ -298,7 +299,11 @@ func TestShadowTimeoutEmitsEvidence(t *testing.T) {
 	}
 }
 
-type slowProvider struct { id string; delay time.Duration }
+type slowProvider struct {
+	id    string
+	delay time.Duration
+}
+
 func (s *slowProvider) ID() string { return s.id }
 func (s *slowProvider) Invoke(ctx context.Context, r *http.Request) (ProviderOutcome, error) {
 	select {
@@ -379,7 +384,7 @@ func TestConcurrentShadowedRequestsNonInterleaved(t *testing.T) {
 	// High concurrency limit to avoid rate-limit dropping shadows in this test
 	rt, _ := NewRouter(RouterConfig{
 		Policy: policy, Registry: reg, Writer: mem,
-		RNGFactory: func() *rand.Rand { return rand.New(rand.NewPCG(42, 42)) },
+		RNGFactory:        func() *rand.Rand { return rand.New(rand.NewPCG(42, 42)) },
 		ShadowEligibility: HeaderShadowEligibility{}, ShadowSampleRate: 1,
 		ShadowTimeout: 200 * time.Millisecond, ShadowMaxConcurrency: 30, ShadowRNGSeed: 999,
 	})
@@ -424,10 +429,10 @@ func TestShadowBodyTooLargeDisablesShadowing(t *testing.T) {
 	// Small limit for test
 	rt, _ := NewRouter(RouterConfig{
 		Policy: policy, Registry: reg, Writer: mem,
-		RNGFactory: func() *rand.Rand { return rand.New(rand.NewPCG(42, 42)) },
+		RNGFactory:        func() *rand.Rand { return rand.New(rand.NewPCG(42, 42)) },
 		ShadowEligibility: HeaderShadowEligibility{}, ShadowSampleRate: 1,
 		ShadowMaxBodyBytes: 10, // 10 bytes limit
-		ShadowTimeout: 200 * time.Millisecond, ShadowRNGSeed: 1,
+		ShadowTimeout:      200 * time.Millisecond, ShadowRNGSeed: 1,
 	})
 	// Body exceeds limit
 	body := strings.Repeat("x", 20)
@@ -457,7 +462,7 @@ func TestShadowBudgetConcurrencyLimit(t *testing.T) {
 	}
 	rt, _ := NewRouter(RouterConfig{
 		Policy: policy, Registry: reg, Writer: mem,
-		RNGFactory: func() *rand.Rand { return rand.New(rand.NewPCG(42, 42)) },
+		RNGFactory:        func() *rand.Rand { return rand.New(rand.NewPCG(42, 42)) },
 		ShadowEligibility: HeaderShadowEligibility{}, ShadowSampleRate: 1,
 		ShadowTimeout: 500 * time.Millisecond, ShadowMaxConcurrency: 1, ShadowRNGSeed: 1,
 	})
