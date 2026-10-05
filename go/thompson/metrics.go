@@ -20,7 +20,7 @@ func (m *PrometheusMetrics) OnSelect(chosen string, scores map[string]float64) {
 	_ = scores
 }
 func (m *PrometheusMetrics) OnRecord(arm string, reward float64, p Posterior) { m.recordsTotal.Add(1) }
-func (m *PrometheusMetrics) OnArmAdded(id string, warmStarted bool)          {}
+func (m *PrometheusMetrics) OnArmAdded(id string, warmStarted bool)           {}
 func (m *PrometheusMetrics) OnDiscount(factor float64)                        { m.discountsTotal.Add(1) }
 
 func (m *PrometheusMetrics) SelectsTotal() uint64   { return m.selectsTotal.Load() }

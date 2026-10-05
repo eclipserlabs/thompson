@@ -143,27 +143,27 @@ func Scenarios() []Scenario {
 	return []Scenario{
 		{
 			Name: "easy", Description: "Three well-separated arms. Any working bandit should solve this.",
-			Arms: []ArmSpec{Fixed("openai/gpt-4", 0.90), Fixed("anthropic/claude-3-opus", 0.55), Fixed("meta/llama-3", 0.20)},
+			Arms:    []ArmSpec{Fixed("openai/gpt-4", 0.90), Fixed("anthropic/claude-3-opus", 0.55), Fixed("meta/llama-3", 0.20)},
 			Horizon: 5000, RewardKind: Bernoulli,
 		},
 		{
 			Name: "hard", Description: "Five near-identical arms. Separating them needs real exploration.",
-			Arms: []ArmSpec{Fixed("openai/gpt-4", 0.50), Fixed("openai/gpt-4-turbo", 0.48), Fixed("anthropic/claude-3-opus", 0.47), Fixed("anthropic/claude-3-haiku", 0.46), Fixed("meta/llama-3", 0.45)},
+			Arms:    []ArmSpec{Fixed("openai/gpt-4", 0.50), Fixed("openai/gpt-4-turbo", 0.48), Fixed("anthropic/claude-3-opus", 0.47), Fixed("anthropic/claude-3-haiku", 0.46), Fixed("meta/llama-3", 0.45)},
 			Horizon: 20000, RewardKind: Bernoulli,
 		},
 		{
 			Name: "drift", Description: "Best and worst arms swap at the midpoint. Stale evidence is a trap.",
-			Arms: []ArmSpec{Switching("openai/gpt-4", 0.80, 0.30, 7500), Fixed("anthropic/claude-3-opus", 0.50), Switching("meta/llama-3", 0.30, 0.80, 7500)},
+			Arms:    []ArmSpec{Switching("openai/gpt-4", 0.80, 0.30, 7500), Fixed("anthropic/claude-3-opus", 0.50), Switching("meta/llama-3", 0.30, 0.80, 7500)},
 			Horizon: 15000, RewardKind: Bernoulli,
 		},
 		{
 			Name: "churn", Description: "A better model ships mid-run. Cold-start cost is the whole story.",
-			Arms: []ArmSpec{Fixed("openai/gpt-4", 0.60), Fixed("anthropic/claude-3-opus", 0.55), Fixed("meta/llama-3", 0.30), Arriving("openai/gpt-4.5-turbo", 0.85, 3000)},
+			Arms:    []ArmSpec{Fixed("openai/gpt-4", 0.60), Fixed("anthropic/claude-3-opus", 0.55), Fixed("meta/llama-3", 0.30), Arriving("openai/gpt-4.5-turbo", 0.85, 3000)},
 			Horizon: 10000, RewardKind: Bernoulli,
 		},
 		{
 			Name: "graded", Description: "Continuous rewards that a success threshold flattens into a tie.",
-			Arms: []ArmSpec{Fixed("openai/gpt-4", 0.95), Fixed("anthropic/claude-3-opus", 0.70), Fixed("meta/llama-3", 0.35)},
+			Arms:    []ArmSpec{Fixed("openai/gpt-4", 0.95), Fixed("anthropic/claude-3-opus", 0.70), Fixed("meta/llama-3", 0.35)},
 			Horizon: 10000, RewardKind: Graded, Spread: 0.05,
 		},
 	}
